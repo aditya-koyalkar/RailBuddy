@@ -6,7 +6,7 @@ class RedisClient {
     private static instance: IoRedis.Redis;
     private static isConnected = false;
 
-    private constructor() { }
+    constructor() { }
 
     static getInstance(): IoRedis.Redis {
         if (!RedisClient.instance) {
@@ -60,4 +60,4 @@ class RedisClient {
     }
 }
 
-export default RedisClient;
+export const redis = RedisClient.getInstance()

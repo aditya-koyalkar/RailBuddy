@@ -9,5 +9,10 @@ export const config = {
     LOG_LEVEL: process.env.LOG_LEVEL || "info",
     SERVICE_NAME: packageJson.name,
     NODE_ENV: process.env.NODE_ENV || "development",
-    REDIS_URL: process.env.REDIS_URL || ""
+    REDIS_URL: process.env.REDIS_URL || "",
+    SENDGRID_API_KEY: process.env.SENDGRID_API_KEY || "",
+    SENDGRID_FROM_EMAIL: process.env.SENDGRID_FROM_EMAIL || "",
+    OTP_TTL: parseInt(process.env.OTP_TTL || '300', 10),
+    OTP_RATE_MAX_PER_HOUR: parseInt(process.env.OTP_RATE_MAX_PER_HOUR || '5', 10),
+    HMAC_SECRET: process.env.HMAC_SECRET || ""
 };

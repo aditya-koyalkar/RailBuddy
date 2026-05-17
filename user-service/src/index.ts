@@ -6,6 +6,7 @@ import { reqLogger } from "./middlewares/req.middlleware.js";
 import { errorHandler } from "./middlewares/error.middleware.js";
 import { corsMiddleware } from "./middlewares/cors.middleware.js";
 import { logger } from "./config/logger.js";
+import authRoutes from "./routes/auth.route.js";
 
 const app = express();
 
@@ -15,6 +16,7 @@ app.use(corsMiddleware);
 app.use(cookieParser());
 app.use(express.json())
 app.use(reqLogger)
+app.use('/api/v1/auth', authRoutes)
 
 app.get("/", (req, res) => {
     res.status(200).json({
