@@ -20,10 +20,8 @@ export const sendOTPEmail = async ({
             subject: "Your OTP Verification Code",
             html: `
         <div style="font-family: Arial, sans-serif; padding: 20px;">
-          <h2>Hello User</h2>
-          
-          <p>Your OTP for verification is:</p>
-
+          <h2>Hi Welcome to Railbuddy . Use the verification code below to complete your sign up:</h2>
+        
           <div
             style="
               font-size: 32px;
@@ -36,7 +34,7 @@ export const sendOTPEmail = async ({
             ${otp}
           </div>
 
-          <p>This OTP is valid for 10 minutes.</p>
+          <p>This OTP is valid for 5 minutes.</p>
 
           <p>If you did not request this, please ignore this email.</p>
         </div>
