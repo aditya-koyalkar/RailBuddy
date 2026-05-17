@@ -1,5 +1,7 @@
 import { config } from "../config/index.js";
 import sendgridMail from "@sendgrid/mail";
+import { logger } from "../config/logger.js";
+import { InternalServerError } from "./error.js";
 sendgridMail.setApiKey(config.SENDGRID_API_KEY)
 interface SendOtpParams {
     email: string;
@@ -46,11 +48,8 @@ export const sendOTPEmail = async ({
             message: "OTP email sent successfully",
         };
     } catch (error) {
-        console.error("Send OTP Email Error:", error);
+        logger.error("Send OTP Email Error:", error);
 
-        return {
-            success: false,
-            message: "Failed to send OTP email",
-        };
+        throw new InternalServerError("Error sending Email")
     }
 };
