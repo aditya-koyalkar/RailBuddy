@@ -14,5 +14,6 @@ export const config = {
     SENDGRID_FROM_EMAIL: process.env.SENDGRID_FROM_EMAIL || "",
     OTP_TTL: parseInt(process.env.OTP_TTL || '300', 10),
     OTP_RATE_MAX_PER_HOUR: parseInt(process.env.OTP_RATE_MAX_PER_HOUR || '5', 10),
-    HMAC_SECRET: process.env.HMAC_SECRET || ""
+    HMAC_SECRET: process.env.HMAC_SECRET || "",
+    OTP_MAX_VERIFY_ATTEMPTS: 5
 };
