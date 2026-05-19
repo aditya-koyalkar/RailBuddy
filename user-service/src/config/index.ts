@@ -15,5 +15,10 @@ export const config = {
     OTP_TTL: parseInt(process.env.OTP_TTL || '300', 10),
     OTP_RATE_MAX_PER_HOUR: parseInt(process.env.OTP_RATE_MAX_PER_HOUR || '5', 10),
     HMAC_SECRET: process.env.HMAC_SECRET || "",
-    OTP_MAX_VERIFY_ATTEMPTS: 5
-};
+    OTP_MAX_VERIFY_ATTEMPTS: 5,
+    JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET || "",
+    ACCESS_TOKEN_EXP: parseInt(process.env.ACCESS_TOKEN_EXP || '300', 10),
+    JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET || "",
+    REFRESH_TOKEN_EXP: parseInt(process.env.REFRESH_TOKEN_EXP || '1000000', 10),
+
+}
