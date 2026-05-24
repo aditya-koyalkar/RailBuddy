@@ -1,13 +1,17 @@
 import { prisma } from "../config/prisma.js"
 import type { SendOTPParams } from "../types/send-otp.type.js";
 import { sendOTPEmail, sendVerificationSuccessfullEmail } from "../utils/email.js";
-import { BadRequestError, ConflictError, ForbiddenError } from "../utils/error.js"
+import { BadRequestError, ConflictError, ForbiddenError, UnauthorizedError } from "../utils/error.js"
 import bcrypt from "bcrypt";
 import { generateAndStoreOTP, verifyOTP } from "../utils/otp.js";
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from "../utils/auth.js";
 import jwt, { type JwtPayload } from "jsonwebtoken"
 import { redis } from "../config/redis.js";
 import { config } from "../config/index.js";
+import { OAuth2Client } from "google-auth-library";
+
+const client = new OAuth2Client(config.GOOGLE_CLIENT_ID)
+
 const sendOTP = async ({ firstName, lastName, email, password }: SendOTPParams) => {
     const existingUser = await prisma.user.findUnique({
         where: {
@@ -87,4 +91,83 @@ const rotateRefreshToken = async (refreshToken: string, deviceId: string) => {
     return { newAccessToken, newRefreshToken }
 }
 
-export default { sendOTP, verifyOTPAndCreateUser, login, rotateRefreshToken }
+const verifyGoogleIdToken = async (idToken: string, deviceId: string) => {
+    const ticket = await client.verifyIdToken({
+        idToken,
+        audience: config.GOOGLE_CLIENT_ID
+    })
+    const payload = ticket.getPayload()
+    if (!payload?.sub || !payload.email) {
+        throw new UnauthorizedError("Invalid Google token payload")
+    }
+    const googleUser = {
+        provider: payload.iss,
+        providerId: payload.sub,
+        email: payload.email,
+        firstName: payload.given_name,
+        lastName: payload.family_name,
+        emailVerified: payload.email_verified || false
+    }
+
+    const user = await prisma.$transaction(async (tx) => {
+        let googleAuth = await tx.authProvider.findUnique({
+            where: {
+                provider_providerId: {
+                    provider: googleUser.provider,
+                    providerId: googleUser.providerId
+                }
+            },
+            include: {
+                user: true
+            }
+        })
+
+        if (googleAuth) {
+            return googleAuth.user
+        }
+
+        let existingUser = await tx.user.findUnique({
+            where: {
+                email: googleUser.email
+            }
+        })
+
+        if (existingUser) {
+            await tx.authProvider.create({
+                data: {
+                    provider: googleUser.provider,
+                    providerId: googleUser.providerId,
+                    userId: existingUser.id
+                }
+            })
+            return existingUser;
+        }
+
+        return await tx.user.create({
+            data: {
+                email: googleUser.email,
+                firstName: googleUser.firstName || "",
+                lastName: googleUser.lastName || "",
+                emailVerified: googleUser.emailVerified,
+                AuthProviders: {
+                    create: {
+                        provider: googleUser.provider,
+                        providerId: googleUser.providerId
+                    }
+                }
+            }
+        })
+    });
+
+    const accessToken = generateAccessToken(user.id)
+    const refreshToken = generateRefreshToken(user.id)
+
+    const { jti } = jwt.decode(refreshToken) as JwtPayload;
+    await redis.set(`refresh:${user.id}:${deviceId}`, jti || "", 'EX', config.REFRESH_TOKEN_EXP);
+    const { password: _password, ...safeUser } = user;
+    await redis.set(`user:${user.id}`, JSON.stringify(safeUser), 'EX', config.REDIS_DEFAULT_TTL)
+    return { accessToken, refreshToken, loggedInUser: safeUser }
+
+}
+
+export default { sendOTP, verifyOTPAndCreateUser, login, rotateRefreshToken, verifyGoogleIdToken }

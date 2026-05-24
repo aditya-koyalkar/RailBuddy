@@ -83,7 +83,7 @@ export const rotateRefreshToken = asyncHandler(async (req, res) => {
         sameSite: "strict",
         maxAge: config.ACCESS_TOKEN_EXP
     })
-    res.cookie("refreshToken", refreshToken, {
+    res.cookie("refreshToken", newRefreshToken, {
         httpOnly: true,
         secure: true,
         sameSite: "strict",
@@ -91,5 +91,32 @@ export const rotateRefreshToken = asyncHandler(async (req, res) => {
     }).status(200).json({
         success: true,
         message: "Access and refresh token reissued"
+    })
+})
+
+
+export const verifyGoogleIdToken = asyncHandler(async (req, res) => {
+    const { idTToken } = req.body;
+    if (!idTToken) {
+        throw new BadRequestError("Invalid Google Id Token", "INVALID TOKEN")
+    }
+    const deviceId = getDeviceFingerPrint(req)
+    const { accessToken, refreshToken, loggedInUser } = await authService.verifyGoogleIdToken(idTToken, deviceId);
+
+    res.cookie("accessToken", accessToken, {
+        httpOnly: true,
+        secure: true,
+        sameSite: "strict",
+        maxAge: config.ACCESS_TOKEN_EXP
+    })
+    res.cookie("refreshToken", refreshToken, {
+        httpOnly: true,
+        secure: true,
+        sameSite: "strict",
+        maxAge: config.REFRESH_TOKEN_EXP
+    }).status(200).json({
+        success: true,
+        message: "LoggedIn successfully",
+        loggedInUser
     })
 })
