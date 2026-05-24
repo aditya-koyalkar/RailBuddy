@@ -2,6 +2,7 @@ import { config } from "../config/index.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import { BadRequestError } from "../utils/error.js";
 import authService from "../services/auth.service.js"
+import { getDeviceFingerPrint } from "../utils/deviceFingerprint.js";
 
 export const sendOTP = asyncHandler(async (req, res, next) => {
     const { firstName, lastName, password, confirmPassword, email } = req.body;
@@ -40,4 +41,31 @@ export const verifyOTP = asyncHandler(async (req, res) => {
         message: "User account created successfully",
         data: user.email
     })
-}) 
+})
+
+export const login = asyncHandler(async (req, res) => {
+    const { email, password } = req.body;
+    if (!email || !password) {
+        throw new BadRequestError("Email and password are required")
+    }
+
+    const deviceId = getDeviceFingerPrint(req)
+    const { accessToken, refreshToken, loggedInUser } = await authService.login(email, password, deviceId)
+    res.cookie("accessToken", accessToken, {
+        httpOnly: true,
+        secure: true,
+        sameSite: "strict",
+        maxAge: config.ACCESS_TOKEN_EXP,
+    })
+    res.cookie("refreshToken", refreshToken, {
+        httpOnly: true,
+        secure: true,
+        sameSite: "strict",
+        maxAge: config.REFRESH_TOKEN_EXP
+    }).status(200).json({
+        success: true,
+        message: "LoggedIn successgfully",
+        loggedInUser
+    })
+
+})

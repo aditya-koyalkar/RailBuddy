@@ -20,5 +20,5 @@ export const config = {
     ACCESS_TOKEN_EXP: parseInt(process.env.ACCESS_TOKEN_EXP || '300', 10),
     JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET || "",
     REFRESH_TOKEN_EXP: parseInt(process.env.REFRESH_TOKEN_EXP || '1000000', 10),
-
+    REDIS_DEFAULT_TTL: parseInt(process.env.REDIS_DEFAULT_TTL || '86400', 10)
 }
