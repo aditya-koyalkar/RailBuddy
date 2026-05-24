@@ -1,10 +1,10 @@
 import { prisma } from "../config/prisma.js"
 import type { SendOTPParams } from "../types/send-otp.type.js";
 import { sendOTPEmail, sendVerificationSuccessfullEmail } from "../utils/email.js";
-import { BadRequestError, ConflictError } from "../utils/error.js"
+import { BadRequestError, ConflictError, ForbiddenError } from "../utils/error.js"
 import bcrypt from "bcrypt";
 import { generateAndStoreOTP, verifyOTP } from "../utils/otp.js";
-import { generateAccessToken, generateRefreshToken } from "../utils/auth.js";
+import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from "../utils/auth.js";
 import jwt, { type JwtPayload } from "jsonwebtoken"
 import { redis } from "../config/redis.js";
 import { config } from "../config/index.js";
@@ -69,4 +69,22 @@ const login = async (email: string, password: string, deviceId: string) => {
     return { accessToken, refreshToken, loggedInUser: safeUser }
 }
 
-export default { sendOTP, verifyOTPAndCreateUser, login }
+const rotateRefreshToken = async (refreshToken: string, deviceId: string) => {
+    const payload = verifyRefreshToken(refreshToken) as JwtPayload
+    const { id: userId, jti } = payload;
+    const storedJti = await redis.get(`refresh:${userId}:${deviceId}`)
+    if (!storedJti) {
+        throw new ForbiddenError("Session Expired", "Login Again")
+    }
+    if (storedJti !== jti) {
+        await redis.del(`refresh:${userId}:${deviceId}`)
+        throw new ForbiddenError("Refresh token reused", "Login Again")
+    }
+    const newAccessToken = generateAccessToken(payload.id);
+    const newRefreshToken = generateRefreshToken(payload.id);
+    const { jti: newJti } = jwt.decode(newRefreshToken) as JwtPayload
+    await redis.set(`refresh:${userId}:${deviceId}`, newJti || "", 'EX', config.REFRESH_TOKEN_EXP)
+    return { newAccessToken, newRefreshToken }
+}
+
+export default { sendOTP, verifyOTPAndCreateUser, login, rotateRefreshToken }

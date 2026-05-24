@@ -1,9 +1,10 @@
 import express from "express"
-import { login, sendOTP, verifyOTP } from "../controllers/auth.controller.js"
+import { login, rotateRefreshToken, sendOTP, verifyOTP } from "../controllers/auth.controller.js"
 const router = express.Router()
 
 router.post("/send-otp", sendOTP);
 router.post('/verify-otp', verifyOTP)
 router.post('/login', login)
+router.get('/refresh', rotateRefreshToken)
 
 export default router;

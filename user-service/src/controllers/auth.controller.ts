@@ -1,6 +1,6 @@
 import { config } from "../config/index.js";
 import asyncHandler from "../utils/asyncHandler.js";
-import { BadRequestError } from "../utils/error.js";
+import { BadRequestError, UnauthorizedError } from "../utils/error.js";
 import authService from "../services/auth.service.js"
 import { getDeviceFingerPrint } from "../utils/deviceFingerprint.js";
 
@@ -68,4 +68,28 @@ export const login = asyncHandler(async (req, res) => {
         loggedInUser
     })
 
+})
+
+export const rotateRefreshToken = asyncHandler(async (req, res) => {
+    const refreshToken = req.cookies.refreshToken;
+    if (!refreshToken) {
+        throw new UnauthorizedError("Your session has expired please login again")
+    }
+    const deviceId = getDeviceFingerPrint(req)
+    const { newAccessToken, newRefreshToken } = await authService.rotateRefreshToken(refreshToken, deviceId)
+    res.cookie("accessToken", newAccessToken, {
+        httpOnly: true,
+        secure: true,
+        sameSite: "strict",
+        maxAge: config.ACCESS_TOKEN_EXP
+    })
+    res.cookie("refreshToken", refreshToken, {
+        httpOnly: true,
+        secure: true,
+        sameSite: "strict",
+        maxAge: config.REFRESH_TOKEN_EXP
+    }).status(200).json({
+        success: true,
+        message: "Access and refresh token reissued"
+    })
 })
