@@ -51,7 +51,8 @@ const verifyOTPAndCreateUser = async (otp: string, otpSessionId: string) => {
         }
     })
 
-    await sendVerificationSuccessfullEmail({ email: meta.email })
+    // await sendVerificationSuccessfullEmail({ email: meta.email })
+    await notificationProducer.sendWelcomeEmail(meta.email, meta.firstName)
     return user;
 }
 

@@ -1,3 +1,4 @@
 export const TOPICS = {
-    OTP_EMAIL: "notifications.email.otp"
+    OTP_EMAIL: "notifications.email.otp",
+    WELCOME_EMAIL: "notifications.email.welcome"
 }

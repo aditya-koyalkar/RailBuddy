@@ -24,6 +24,13 @@ class NotificationProducer {
         )
     }
 
+    async sendWelcomeEmail(email: string, firstName: string) {
+        return this.sendMessage(TOPICS.WELCOME_EMAIL, `welcome-${email}`, {
+            email,
+            firstName
+        })
+    }
+
     async sendMessage(topic: string, key: string, value: any) {
         try {
             await this.intialize()
