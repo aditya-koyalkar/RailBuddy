@@ -9,6 +9,8 @@ import jwt, { type JwtPayload } from "jsonwebtoken"
 import { redis } from "../config/redis.js";
 import { config } from "../config/index.js";
 import { OAuth2Client } from "google-auth-library";
+import notificationProducer from "../kafka/producer/notifications.producer.js";
+import { logger } from "../config/logger.js";
 
 const client = new OAuth2Client(config.GOOGLE_CLIENT_ID)
 
@@ -26,7 +28,9 @@ const sendOTP = async ({ firstName, lastName, email, password }: SendOTPParams) 
     const meta = { firstName, lastName, email, hashedPassword };
     const { otp, otpSessionId } = await generateAndStoreOTP(meta);
 
-    await sendOTPEmail({ otp, email })
+    // await sendOTPEmail({ otp, email })
+    notificationProducer.sendOTPEmail(email, otp, (config.OTP_TTL) / 60)
+    logger.info(`OTP email queued for ${email}`)
 
     return { otpSessionId }
 

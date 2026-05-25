@@ -21,5 +21,7 @@ export const config = {
     JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET || "",
     REFRESH_TOKEN_EXP: parseInt(process.env.REFRESH_TOKEN_EXP || '1000000', 10),
     REDIS_DEFAULT_TTL: parseInt(process.env.REDIS_DEFAULT_TTL || '86400', 10),
-    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || ""
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || "",
+    KAFKA_CLIENT_ID: process.env.KAFKA_CLIENT_ID || "",
+    KAFKA_BROKER: process.env.KAFKA_BROKER || 'localhost:9093'
 }
