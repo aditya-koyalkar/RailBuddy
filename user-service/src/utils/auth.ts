@@ -21,7 +21,7 @@ export const generateRefreshToken = (userId: string) => {
 }
 
 
-export const verifyAccessTOken = (accessToken: string) => {
+export const verifyAccessToken = (accessToken: string) => {
     return jwt.verify(accessToken, config.JWT_ACCESS_SECRET);
 }
 
