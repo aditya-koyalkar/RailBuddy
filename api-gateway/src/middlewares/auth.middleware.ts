@@ -7,11 +7,8 @@ import { logger } from "../config/logger.js";
 
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith("Bearer")) {
-        return next(new UnauthorizedError("Authorization token is mising"))
-    }
-    const accessToken = authHeader.split(" ")[1];
+
+    const accessToken = req.cookies.accessToken;
 
     if (!accessToken) {
         throw new UnauthorizedError("Authorization token missing")
