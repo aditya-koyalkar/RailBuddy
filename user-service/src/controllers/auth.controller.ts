@@ -4,7 +4,7 @@ import { BadRequestError, UnauthorizedError } from "../utils/error.js";
 import authService from "../services/auth.service.js"
 import { getDeviceFingerPrint } from "../utils/deviceFingerprint.js";
 
-export const sendOTP = asyncHandler(async (req, res, next) => {
+export const sendOTP = asyncHandler(async (req, res, _next) => {
     const { firstName, lastName, password, confirmPassword, email } = req.body;
     if (!firstName || !lastName || !password || !confirmPassword || !email) {
         throw new BadRequestError("All fields are mandatory")

@@ -1,6 +1,6 @@
 import dotenv from "dotenv"
 dotenv.config();
-import packageJson from "../../package.json";
+import packageJson from "../../package.json" with { type: "json" };;
 
 
 export const config = {

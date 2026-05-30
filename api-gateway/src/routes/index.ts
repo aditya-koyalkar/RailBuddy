@@ -1,8 +1,8 @@
 import express from "express";
-import { requireAuth } from "../middlewares/auth.middleware";
-import { config } from "../config";
-import { createProxy } from "./proxy";
-import { endpointRatelimit } from "../middlewares/rateLimitting.middleware";
+import { requireAuth } from "../middlewares/auth.middleware.js";
+import { config } from "../config/index.js";
+import { createProxy } from "./proxy.js";
+import { endpointRatelimit } from "../middlewares/rateLimitting.middleware.js";
 
 const router = express.Router()
 
@@ -16,7 +16,7 @@ router.get('/users/user/get-profile', requireAuth, userServiceProxy)
 
 // Garwway health
 
-router.get('/gateway/health', (req, res) => {
+router.get('/gateway/health', (_req, res) => {
     res.status(200).json({
         success: true,
         message: "API Gateway is healthy",

@@ -1,6 +1,5 @@
 import { prisma } from "../config/prisma.js"
 import type { SendOTPParams } from "../types/send-otp.type.js";
-import { sendOTPEmail, sendVerificationSuccessfullEmail } from "../utils/email.js";
 import { BadRequestError, ConflictError, ForbiddenError, UnauthorizedError } from "../utils/error.js"
 import bcrypt from "bcrypt";
 import { generateAndStoreOTP, verifyOTP } from "../utils/otp.js";

@@ -18,7 +18,7 @@ app.use(cookieParser());
 app.use(express.json())
 app.use(reqLogger)
 
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
     res.status(200).json({
         success: true,
         message: "API Gateway is healthy",

@@ -6,7 +6,7 @@ import { config } from "../config/index.js";
 import { logger } from "../config/logger.js";
 
 
-export function requireAuth(req: Request, res: Response, next: NextFunction) {
+export function requireAuth(req: Request, _res: Response, next: NextFunction) {
 
     const accessToken = req.cookies.accessToken;
 

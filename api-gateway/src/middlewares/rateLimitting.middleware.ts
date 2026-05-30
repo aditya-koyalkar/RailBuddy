@@ -1,6 +1,6 @@
-import { redis } from "../config/redis";
+import { redis } from "../config/redis.js";
 import type { Request, Response, NextFunction } from "express";
-import { TooManyRequestsError } from "../utils/error";
+import { TooManyRequestsError } from "../utils/error.js";
 
 
 async function ratelimiter(

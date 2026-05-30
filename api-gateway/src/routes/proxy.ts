@@ -1,9 +1,9 @@
 import { RequestHandler } from "express";
 import axios, { AxiosRequestConfig } from "axios";
 
-import { config } from "../config";
-import { logger } from "../config/logger";
-import { ServiceUnavailableError } from "../utils/error";
+import { config } from "../config/index.js";
+import { logger } from "../config/logger.js";
+import { ServiceUnavailableError } from "../utils/error.js";
 
 type CircuitState = "CLOSED" | "OPEN" | "HALF_OPEN";
 
