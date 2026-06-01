@@ -1,0 +1,116 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+   provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Station{
+  id String @id @default(ulid())
+  name String @unique
+  code String @unique
+  city String
+  state String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  routeStations RouteStation[]
+  
+  @@index([name])
+  @@index([code])
+  @@map("stations")
+}
+
+model Train {
+  id String @id @default(uuid())
+  trainNumber String @unique
+  trainName String
+  coachName String @default("AC")
+  totalSeats Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  seats Seat[]
+  route Route?
+  schedules Schedule[]
+
+  @@map("trains")
+}
+
+
+enum SeatType {
+  LOWER
+  MIDDLE
+  UPPER
+  SIDE_LOWER
+  SIDE_UPPER
+}
+
+model Seat{
+  id String @id @default(uuid())
+  trainId String
+  seatNumber Int
+  seatType SeatType
+  price Float
+
+  train Train @relation(fields: [trainId],references: [id],onDelete: Cascade)
+
+  @@unique([trainId,seatNumber])
+  @@map("seats")
+}
+
+model Route {
+  id String @id @default(uuid())
+  trainId String @unique
+
+  train Train @relation(fields: [trainId],references: [id],onDelete: Cascade)
+
+  routeStations RouteStation[]
+
+  @@map("routes")
+}
+
+model RouteStation {
+  id String @id @default(uuid())
+  routeId String
+  stationId String
+  sequenceNumber Int
+  arrivalTime String?
+  departureTime String?
+  distanceFromOrigin Float @default(0)
+
+  route Route @relation(fields: [routeId],references: [id],onDelete: Cascade)
+  station Station @relation(fields: [stationId],references: [id],onDelete: Cascade)
+
+  @@unique([routeId,sequenceNumber])
+  @@unique([routeId,stationId])
+  @@map("route_stations")
+}
+
+enum ScheduleStatus {
+ ACTIVE
+ IN_ACTIVE
+}
+
+model Schedule{
+  id String @id @default(uuid())
+  trainId String
+  departureDate DateTime @db.Date
+  status ScheduleStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  train Train @relation(fields: [trainId],references: [id],onDelete: Cascade)
+
+  @@unique([trainId,departureDate])
+  @@map("schedules")
+  }

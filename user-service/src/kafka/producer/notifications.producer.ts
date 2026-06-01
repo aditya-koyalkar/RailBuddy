@@ -7,7 +7,7 @@ class NotificationProducer {
     constructor() {
         this.isInitialized = false;
     }
-    async intialize() {
+    async initialize() {
         if (!this.isInitialized) {
             await connectProducer()
             this.isInitialized = true;
@@ -33,7 +33,7 @@ class NotificationProducer {
 
     async sendMessage(topic: string, key: string, value: any) {
         try {
-            await this.intialize()
+            await this.initialize()
             const message = {
                 topic,
                 messages: [{

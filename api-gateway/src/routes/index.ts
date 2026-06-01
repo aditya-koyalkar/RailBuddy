@@ -7,12 +7,16 @@ import { endpointRatelimit } from "../middlewares/rateLimitting.middleware.js";
 const router = express.Router()
 
 const userServiceProxy = createProxy('userService', config.USER_SERVICE_URL);
+const adminServiceProxy = createProxy('adminService', config.ADMIN_SERVICE_URL)
 
 //private routes
-router.post('/users/auth/login', endpointRatelimit(100, 90000), userServiceProxy)
+router.get('/users/user/get-profile', requireAuth, userServiceProxy)
+router.post('/admins/station', requireAuth, endpointRatelimit(10, 90000), adminServiceProxy)
 
 //public routes
-router.get('/users/user/get-profile', requireAuth, userServiceProxy)
+router.post('/users/auth/login', endpointRatelimit(10, 90000), userServiceProxy)
+router.post('/users/auth/send-otp', endpointRatelimit(10, 90000), userServiceProxy)
+router.post('/users/auth/verify-otp', endpointRatelimit(10, 90000), userServiceProxy)
 
 // Garwway health
 
