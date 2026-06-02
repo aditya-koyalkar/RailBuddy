@@ -2,6 +2,7 @@ import { logger } from "../config/logger"
 import { prisma } from "../config/prisma"
 import { adminProducer } from "../kafka/producer/admin.producer"
 import { CreateRouteDTO } from "../types/create.route.type"
+import { CreateScheduleDTO } from "../types/create.schedule.type"
 import { CreateTrainDTO } from "../types/create.train.type"
 import { BadRequestError, ConflictError, NotFoundError } from "../utils/error"
 
@@ -151,4 +152,70 @@ const getTrainById = async (trainId: string) => {
     return train
 }
 
-export default { createTrain, createRoute, getTrainById }
+const createSchedule = async ({ trainId, departureDate, status }: CreateScheduleDTO) => {
+    const train = await prisma.train.findUnique({
+        where: { id: trainId },
+        include: {
+            route: {
+                include: {
+                    routeStations: {
+                        include: {
+                            station: true
+                        },
+                        orderBy: {
+                            sequenceNumber: 'asc'
+                        }
+                    }
+                }
+            },
+            seats: true
+        }
+    })
+    if (!train) {
+        throw new NotFoundError("Train not found")
+    }
+
+    if (train.seats.length === 0) {
+        throw new BadRequestError("Train has no seats")
+    }
+
+    if (!train.route) {
+        throw new BadRequestError("Route not found")
+    }
+
+    const date = new Date(departureDate)
+
+    if (isNaN(date.getTime())) {
+        throw new BadRequestError("Invalid departure date")
+    }
+
+    const existingSchedule = await prisma.schedule.findUnique({
+        where: {
+            trainId_departureDate: {
+                trainId,
+                departureDate: date
+            }
+        }
+    })
+    if (existingSchedule) {
+        throw new ConflictError("Schedule for this train and date already exists")
+    }
+
+    const schedule = await prisma.schedule.create({
+        data: {
+            trainId,
+            departureDate: date,
+            status
+        }
+    })
+
+    logger.info("Schedule created successfully", { id: schedule.id, trainId: schedule.trainId })
+
+    await adminProducer.publishScheduleCreated(schedule).catch((error) => {
+        logger.error('Failed to publish schedule create event', { error: error.message })
+    })
+
+    return schedule
+}
+
+export default { createTrain, createRoute, getTrainById, createSchedule }

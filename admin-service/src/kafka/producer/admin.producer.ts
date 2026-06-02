@@ -1,4 +1,4 @@
-import { Route, Station, Train } from "@prisma/client";
+import { Route, Schedule, Station, Train } from "@prisma/client";
 import { connectProducer, producer } from "../../config/kafka";
 import { TOPICS } from "../../utils/constants";
 import { logger } from "../../config/logger";
@@ -31,6 +31,13 @@ class AdminProducer {
         return this.sendMessage(TOPICS.ROUTE_CREATED, `route-${route.id}`, {
             eventType: 'ROUTE_CREATED',
             data: route, timeStamp: new Date().toISOString()
+        })
+    }
+
+    async publishScheduleCreated(schedule: Schedule) {
+        return this.sendMessage(TOPICS.SCHEDULE_CREATED, `schedule-${schedule.id}`, {
+            eventType: 'SCHEDULE_CREATED',
+            data: schedule, timeStamp: new Date().toISOString()
         })
     }
 

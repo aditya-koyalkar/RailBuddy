@@ -63,3 +63,19 @@ export const getTrainById = asyncHandler(async (req, res) => {
         data: train
     });
 });
+
+export const createSchedule = asyncHandler(async (req, res) => {
+    const { trainId, departureDate, status } = req.body;
+
+    if (!trainId || !departureDate) {
+        throw new BadRequestError("Train id and departure date are required");
+    }
+
+    const schedule = await trainService.createSchedule({ trainId, departureDate, status });
+
+    return res.status(201).json({
+        success: true,
+        message: "Schedule created successfully",
+        data: schedule
+    });
+});
