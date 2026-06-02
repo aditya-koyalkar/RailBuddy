@@ -4,7 +4,7 @@ import { createStation } from "../controllers/station.controller"
 
 const router = express.Router()
 
-router.post('/', getUserContext, createStation)
+router.post('/station', getUserContext, createStation)
 
 
 export default router
