@@ -12,7 +12,7 @@ const adminServiceProxy = createProxy('adminService', config.ADMIN_SERVICE_URL)
 //private routes
 router.get('/users/user/get-profile', requireAuth, userServiceProxy)
 router.post('/admins/station', requireAuth, endpointRatelimit(10, 90000), adminServiceProxy)
-
+router.post('/admins/train', requireAuth, endpointRatelimit(10, 90000), adminServiceProxy)
 //public routes
 router.post('/users/auth/login', endpointRatelimit(10, 90000), userServiceProxy)
 router.post('/users/auth/send-otp', endpointRatelimit(10, 90000), userServiceProxy)
