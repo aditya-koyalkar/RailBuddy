@@ -47,3 +47,19 @@ export const createRoute = asyncHandler(async (req, res) => {
         data: train
     });
 })
+
+export const getTrainById = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    if (!id) {
+        throw new BadRequestError("Train id is required");
+    }
+
+    const train = await trainService.getTrainById(id as string);
+
+    return res.status(200).json({
+        success: true,
+        message: "Train fetched successfully",
+        data: train
+    });
+});

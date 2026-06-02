@@ -126,4 +126,29 @@ const createRoute = async (trainId: string, routeStations: CreateRouteDTO['route
     return route
 }
 
-export default { createTrain, createRoute }
+const getTrainById = async (trainId: string) => {
+    const train = await prisma.train.findUnique({
+        where: { id: trainId },
+        include: {
+            seats: {
+                orderBy: { seatNumber: 'asc' }
+            },
+            route: {
+                include: {
+                    routeStations: {
+                        include: { station: true },
+                        orderBy: { sequenceNumber: 'asc' }
+                    }
+                }
+            }
+        }
+    })
+
+    if (!train) {
+        throw new NotFoundError("Train not found")
+    }
+
+    return train
+}
+
+export default { createTrain, createRoute, getTrainById }
