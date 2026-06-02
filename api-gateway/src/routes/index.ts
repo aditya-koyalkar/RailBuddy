@@ -13,6 +13,7 @@ const adminServiceProxy = createProxy('adminService', config.ADMIN_SERVICE_URL)
 router.get('/users/user/get-profile', requireAuth, userServiceProxy)
 router.post('/admins/station/station', requireAuth, endpointRatelimit(10, 90000), adminServiceProxy)
 router.post('/admins/train/train', requireAuth, endpointRatelimit(10, 90000), adminServiceProxy)
+router.post('/admins/train/route', requireAuth, endpointRatelimit(10, 90000), adminServiceProxy)
 router.get('/admins/train/train/:id', requireAuth, endpointRatelimit(10, 90000), adminServiceProxy)
 router.post('/admins/train/schedule', requireAuth, endpointRatelimit(10, 90000), adminServiceProxy)
 //public routes
