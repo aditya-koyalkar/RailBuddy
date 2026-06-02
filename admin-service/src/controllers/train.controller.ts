@@ -27,3 +27,23 @@ export const createTrain = asyncHandler(async (req, res) => {
         data: train
     });
 });
+
+export const createRoute = asyncHandler(async (req, res) => {
+    const { trainId, routeStations } = req.body;
+
+    if (!trainId || !routeStations || routeStations.length == 0) {
+        throw new BadRequestError("All details are required");
+    }
+
+    if (routeStations.length == 1) {
+        throw new BadRequestError("At least two stations are required");
+    }
+
+    const train = await trainService.createRoute(trainId, routeStations);
+
+    return res.status(201).json({
+        success: true,
+        message: "Route created successfully",
+        data: train
+    });
+})

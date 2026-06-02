@@ -1,8 +1,9 @@
 import { logger } from "../config/logger"
 import { prisma } from "../config/prisma"
 import { adminProducer } from "../kafka/producer/admin.producer"
+import { CreateRouteDTO } from "../types/create.route.type"
 import { CreateTrainDTO } from "../types/create.train.type"
-import { BadRequestError, ConflictError } from "../utils/error"
+import { BadRequestError, ConflictError, NotFoundError } from "../utils/error"
 
 const createTrain = async ({ trainNumber, trainName, coachName, totalSeats, seats }: CreateTrainDTO) => {
     const existing = await prisma.train.findUnique({
@@ -52,4 +53,77 @@ const createTrain = async ({ trainNumber, trainName, coachName, totalSeats, seat
 
 }
 
-export default { createTrain }
+const createRoute = async (trainId: string, routeStations: CreateRouteDTO['routeStations']) => {
+    const existing = await prisma.train.findUnique({
+        where: {
+            id: trainId
+        }
+    })
+    if (!existing) {
+        throw new NotFoundError("Train not found")
+    }
+
+    const existingRoute = await prisma.route.findUnique({
+        where: {
+            trainId
+        }
+    })
+    if (existingRoute) {
+        throw new ConflictError("Route already exists")
+    }
+
+    const stationIds = routeStations.map((routeStation) => routeStation.stationId)
+    const existingStations = await prisma.station.findMany({
+        where: {
+            id: {
+                in: stationIds
+            }
+        }
+    })
+    if (existingStations.length !== stationIds.length) {
+        throw new NotFoundError("One or more stations not found")
+    }
+
+    const sorted = [...routeStations].sort((a, b) => a.sequenceNumber - b.sequenceNumber)
+
+    for (let i = 0; i < sorted.length; i++) {
+        if (sorted[i].sequenceNumber !== i + 1) {
+            throw new BadRequestError("Sequence number are not in order")
+        }
+    }
+
+    const route = await prisma.route.create({
+        data: {
+            trainId,
+            routeStations: {
+                create: routeStations.map((routeStation) => ({
+                    stationId: routeStation.stationId,
+                    arrivalTime: routeStation.arrivalTime,
+                    departureTime: routeStation.departureTime,
+                    sequenceNumber: routeStation.sequenceNumber,
+                    distanceFromOrigin: routeStation.distanceFromOrigin
+                }))
+            }
+        },
+        include: {
+            routeStations: {
+                include: {
+                    station: true
+                },
+                orderBy: {
+                    sequenceNumber: 'asc'
+                }
+            }
+        }
+    })
+
+    logger.info("Route created successfully", { id: route.id, trainId: route.trainId })
+
+    await adminProducer.publishRouteCreated(route).catch((error) => {
+        logger.error('Failed to publish route create event', { error: error.message })
+    })
+
+    return route
+}
+
+export default { createTrain, createRoute }
