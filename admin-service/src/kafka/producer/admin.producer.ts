@@ -27,7 +27,7 @@ class AdminProducer {
         })
     }
 
-    async publishRouteCreated(route: Route) {
+    async publishRouteCreated(route: Route & { train: Train }) {
         return this.sendMessage(TOPICS.ROUTE_CREATED, `route-${route.id}`, {
             eventType: 'ROUTE_CREATED',
             data: route, timeStamp: new Date().toISOString()

@@ -118,9 +118,20 @@ const createRoute = async (trainId: string, routeStations: CreateRouteDTO['route
         }
     })
 
+    const trainWithSeats = await prisma.train.findUnique({
+        where: { id: trainId },
+        include: {
+            seats: {
+                orderBy: {
+                    seatNumber: 'asc'
+                }
+            }
+        }
+    })
+
     logger.info("Route created successfully", { id: route.id, trainId: route.trainId })
 
-    await adminProducer.publishRouteCreated(route).catch((error) => {
+    await adminProducer.publishRouteCreated({ ...route, train: trainWithSeats! }).catch((error) => {
         logger.error('Failed to publish route create event', { error: error.message })
     })
 
