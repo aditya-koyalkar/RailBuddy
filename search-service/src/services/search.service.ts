@@ -116,7 +116,7 @@ const indexTrainRoute = async (routeEvent: any) => {
 
     for (const rs of routeStations) {
         await esClient.index({
-            index: TRAIN_INDEX,
+            index: STATION_INDEX,
             id: rs.station.id,
             document: {
                 stationId: rs.station.id,
