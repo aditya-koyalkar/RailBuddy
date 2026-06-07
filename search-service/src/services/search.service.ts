@@ -180,5 +180,190 @@ const indexSchedule = async (scheduleEvent: any) => {
     }
 }
 
+const searchTrains = async (from: string, to: string, date: string | null) => {
 
-export default { indexStation, indexTrain, indexTrainRoute, indexSchedule }
+    const fromStation = await resolveStation(from);
+    const toStation = await resolveStation(to);
+
+    if (!fromStation) {
+        return { trains: [], message: `Station ${from} not found` }
+    }
+
+    if (!toStation) {
+        return { trains: [], message: `Station ${to} not found` }
+    }
+
+    if (fromStation.city === toStation.city) {
+        return { trains: [], message: `From and To stations cannot be in the same city ${fromStation.city}` }
+    }
+
+    const query: any = {
+        bool: {
+            must: [
+                {
+                    nested: {
+                        path: 'route',
+                        query: {
+                            term: { 'route.stationId': fromStation.stationId }
+                        },
+                        inner_hits: {
+                            name: 'from_station'
+                        }
+                    }
+                },
+                {
+                    nested: {
+                        path: 'route',
+                        query: {
+                            term: { 'route.stationId': toStation.stationId }
+                        },
+                        inner_hits: {
+                            name: 'to_station'
+                        }
+                    }
+                }
+            ]
+        }
+    };
+
+    const result = await esClient.search({
+        index: TRAIN_INDEX,
+        query,
+        size: 50
+    });
+
+    const trains = result.hits.hits.map((hit: any) => {
+        const source = hit._source;
+        const fromHit = hit.inner_hits.from_station.hits.hits[0]._source;
+        const toHit = hit.inner_hits.to_station.hits.hits[0]._source;
+
+        if (!fromHit || !toHit || fromHit.sequenceNumber >= toHit.sequenceNumber) {
+            return null;
+        }
+
+        let scheduleInfo = null;
+
+        if (date && source.schedules.length > 0) {
+            scheduleInfo = source.schedules.find((s: any) => s.status === 'ACTIVE' && normalizeDateString(s.departureDate) === date) || null;
+        }
+
+
+        return {
+            trainId: source.trainId,
+            trainName: source.trainName,
+            trainNumber: source.trainNumber,
+            departureDate: date || null,
+            schedule: scheduleInfo,
+            from: {
+                stationId: fromHit.stationId,
+                name: fromHit.name,
+                code: fromHit.code,
+                city: fromHit.city,
+                distanceFromOrigin: fromHit.distanceFromOrigin,
+                arrivalTime: fromHit.arrivalTime,
+                departureTime: fromHit.departureTime
+            },
+            to: {
+                stationId: toHit.stationId,
+                name: toHit.name,
+                code: toHit.code,
+                city: toHit.city,
+                distanceFromOrigin: toHit.distanceFromOrigin,
+                arrivalTime: toHit.arrivalTime,
+                departureTime: toHit.departureTime
+            },
+            seatSummary: source.seatSummary
+        }
+
+    }).filter(Boolean);
+
+
+    return {
+        from: {
+            resolved: fromStation.name, code: fromStation.code
+        },
+        to: {
+            resolved: toStation.name, code: toStation.code
+        },
+        date: date || 'any',
+        count: trains.length,
+        trains
+    }
+
+
+
+
+}
+
+const resolveStation = async (input: string) => {
+
+    // 1.Try exact code matck
+    const exactResult = await esClient.search({
+        index: STATION_INDEX,
+        query: {
+            term: {
+                "code": input.trim().toUpperCase()
+            }
+        },
+        size: 1
+    });
+
+    if (exactResult.hits.hits.length > 0) {
+        return exactResult.hits.hits[0]._source as any;
+    }
+
+    // 2. Try completion suggester for typos
+
+    try {
+        const suggestResult = await esClient.search({
+            index: STATION_INDEX,
+            suggest: {
+                stattion_suggest: {
+                    prefix: input,
+                    completion: {
+                        field: "suggest",
+                        size: 1,
+                        fuzzy: {
+                            fuzziness: "AUTO"
+                        }
+                    }
+                }
+            }
+        })
+
+        const options = suggestResult.suggest?.station_suggest?.[0]?.options || [] as any;
+        if (options.length > 0) {
+            return options[0]._source;
+        }
+
+    }
+    catch (error: any) {
+        logger.warn(`Suggest fallback failed: ${error.message}`)
+    }
+
+    // 3. fuzzy match on name
+
+    const fuzzyMatch = await esClient.search({
+        index: STATION_INDEX,
+        query: {
+            multi_match: {
+                query: input,
+                fields: ["name", "city"],
+                fuzziness: "AUTO",
+                prefix_length: 1
+            }
+        },
+        size: 1
+    });
+
+    return fuzzyMatch.hits.hits[0]._source || null;
+
+}
+
+const normalizeDateString = (dateStr: string) => {
+    if (!dateStr) return null;
+    return dateStr.split('T')[0];
+}
+
+
+export default { indexStation, indexTrain, indexTrainRoute, indexSchedule, searchTrains }
