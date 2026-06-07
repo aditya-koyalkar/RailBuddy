@@ -1,4 +1,3 @@
-import { afterEach } from "node:test";
 import { esClient, STATION_INDEX, TRAIN_INDEX } from "../config/elasticSearch.js"
 import { logger } from "../config/logger.js"
 

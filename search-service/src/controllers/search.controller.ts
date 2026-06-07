@@ -20,8 +20,7 @@ export const searchTrains = asyncHandler(async (req, res) => {
 
 export const autoComplete = asyncHandler(async (req, res) => {
     const { q } = req.query as { q?: string };
-
-    if (!q || q.trim().length <= 1) {
+    if (!q || q.length <= 1) {
         throw new BadRequestError("Query should have atleast 2 characters");
     }
 

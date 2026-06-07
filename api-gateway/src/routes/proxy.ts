@@ -251,7 +251,7 @@ export function createProxy(
                 servicePath + queryString,
                 req.method,
                 req.method === "GET" || req.method === "DELETE"
-                    ? req.query
+                    ? undefined
                     : req.body,
                 req.headers as Record<string, unknown>,
                 circuitBreaker
