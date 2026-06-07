@@ -17,4 +17,5 @@ export const config = {
     CIRCUIT_BREAKER_THRESHOLD: parseInt(process.env.CIRCUIT_BREAKER_THRESHOLD || '5', 10),
     CIRCUIT_BREAKER_TIMEOUT: parseInt(process.env.CIRCUIT_BREAKER_TIMEOUT || '300000', 10),
     SERVICE_TIMEOUT_MS: parseInt(process.env.SERVICE_TIMEOUT_MS || '50000', 10),
+    SEARCH_SERVICE_URL: process.env.SEARCH_SERVICE_URL || "",
 }

@@ -1,3 +1,4 @@
+import { afterEach } from "node:test";
 import { esClient, STATION_INDEX, TRAIN_INDEX } from "../config/elasticSearch.js"
 import { logger } from "../config/logger.js"
 
@@ -360,10 +361,38 @@ const resolveStation = async (input: string) => {
 
 }
 
+const autocompleteStation = async (prefix: string) => {
+
+    const result = await esClient.search({
+        index: STATION_INDEX,
+        suggest: {
+            station_suggest: {
+                prefix,
+                completion: {
+                    field: "suggest",
+                    fuzzy: {
+                        fuzziness: "AUTO"
+                    },
+                    size: 10
+                }
+            }
+        }
+    });
+
+    const options = result.suggest?.station_suggest?.[0]?.options || [] as any;
+    return options.map((opt: any) => ({
+        name: opt._source.name,
+        code: opt._source.code,
+        city: opt._source.city,
+        stationId: opt._source.stationId
+    }));
+}
+
+
 const normalizeDateString = (dateStr: string) => {
     if (!dateStr) return null;
     return dateStr.split('T')[0];
 }
 
 
-export default { indexStation, indexTrain, indexTrainRoute, indexSchedule, searchTrains }
+export default { indexStation, indexTrain, indexTrainRoute, indexSchedule, searchTrains, autocompleteStation }

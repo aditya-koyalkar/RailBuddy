@@ -8,6 +8,7 @@ const router = express.Router()
 
 const userServiceProxy = createProxy('userService', config.USER_SERVICE_URL);
 const adminServiceProxy = createProxy('adminService', config.ADMIN_SERVICE_URL)
+const searchServiceProxy = createProxy('searchService', config.SEARCH_SERVICE_URL)
 
 //private routes
 router.get('/users/user/get-profile', requireAuth, userServiceProxy)
@@ -16,6 +17,11 @@ router.post('/admins/train/train', requireAuth, endpointRatelimit(10, 90000), ad
 router.post('/admins/train/route', requireAuth, endpointRatelimit(10, 90000), adminServiceProxy)
 router.get('/admins/train/train/:id', requireAuth, endpointRatelimit(10, 90000), adminServiceProxy)
 router.post('/admins/train/schedule', requireAuth, endpointRatelimit(10, 90000), adminServiceProxy)
+
+//search routes
+router.get('/search/search/trains', requireAuth, endpointRatelimit(10, 90000), searchServiceProxy)
+router.get('/search/search/autocomplete', requireAuth, endpointRatelimit(10, 90000), searchServiceProxy)
+
 //public routes
 router.post('/users/auth/login', endpointRatelimit(10, 90000), userServiceProxy)
 router.post('/users/auth/send-otp', endpointRatelimit(10, 90000), userServiceProxy)

@@ -8,6 +8,7 @@ import { logger } from "./config/logger.js";
 import { reqLogger } from "./middlewares/req.middleware.js";
 import { searchConsumer } from "./kafka/consumer/search.consumer.js";
 import { initIndices } from "./config/elasticSearch.js";
+import searchRouter from "./routes/search.route.js";
 
 
 const app = express();
@@ -24,6 +25,8 @@ app.get("/", (_req, res) => {
         message: "ok"
     })
 })
+
+app.use('/api/v1/search', searchRouter);
 
 app.use(errorHandler)
 
