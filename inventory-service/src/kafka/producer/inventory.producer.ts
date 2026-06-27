@@ -2,7 +2,7 @@ import { connectProducer, producer } from "../../config/kafka";
 import { logger } from "../../config/logger";
 import { TOPICS } from "../../utils/constants";
 
-class AdminProducer {
+class InventoryProducer {
     isInitialized;
     constructor() {
         this.isInitialized = false;
@@ -62,6 +62,6 @@ class AdminProducer {
     }
 }
 
-export default new AdminProducer()
+export default new InventoryProducer()
 
 
