@@ -1,0 +1,82 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+   provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+
+enum SeatStatus {
+  AVAILABLE
+  LOCKED
+  BOOKED
+  CANCELLED
+}
+
+
+model IdempotencyRecord { 
+  id String @id @default(uuid())
+  eventKey String @unique
+  processedAt DateTime @default(now())
+
+  @@index([eventKey])
+  @@map("indempotency_records")
+}
+
+
+model ScheduleInventory {
+  id String @id @default(uuid())
+  scheduleId String @unique
+  trainId String
+  trainNumber String
+  trainName String
+  departureDate DateTime @db.Date
+  totalSeats Int
+  available Int
+  locked Int @default(0)
+  booked Int @default(0)
+  status String @default("ACTIVE")
+  version Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  seats SeatInventory[]
+
+  @@index([scheduleId,status])
+  @@index([departureDate])
+  @@map("schedule_inventory")
+
+}
+
+model SeatInventory {
+  id String @id @default(uuid())
+  scheduleInventoryId String
+  scheduleId String
+  seatId String 
+  seatNumber Int
+  status SeatStatus @default(AVAILABLE) // AVAILABLE, LOCKED, BOOKED
+
+  scheduleInventory ScheduleInventory @relation(fields: [scheduleInventoryId], references: [id])
+}
+
+
+model RouteStop {
+  id String @id @default(uuid())
+  scheduleId String
+  stationId String
+  stationName String
+  stationCode String
+  sequenceNumber Int
+
+  @@index([scheduleId])
+  @@index([stationId])
+  @@map("route_stops")
+}
