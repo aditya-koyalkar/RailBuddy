@@ -52,6 +52,7 @@ model ScheduleInventory {
 
   @@index([scheduleId,status])
   @@index([departureDate])
+  @@index([trainId])
   @@map("schedule_inventory")
 
 }
@@ -62,9 +63,25 @@ model SeatInventory {
   scheduleId String
   seatId String 
   seatNumber Int
+  seatType String
+  price Float
   status SeatStatus @default(AVAILABLE) // AVAILABLE, LOCKED, BOOKED
+  lockedBy String?
+  lockedAt  DateTime?
+  lockExpiresAt DateTime?
+  bookingId String?
+  version Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([scheduleId, seatId])
+  @@index([scheduleId,seatNumber])
+  @@index([lockExpiresAt,status])
+  @@index([bookingId])
 
   scheduleInventory ScheduleInventory @relation(fields: [scheduleInventoryId], references: [id])
+  @@map("seat_inventory")
 }
 
 
@@ -79,4 +96,24 @@ model RouteStop {
   @@index([scheduleId])
   @@index([stationId])
   @@map("route_stops")
+}
+
+model SeatSegmentLock {
+  id String @id @default(uuid())
+  scheduleId String
+  seatId String
+  fromSeq Int 
+  toSeq Int 
+  status SeatStatus @default(LOCKED)
+  lockedBy String?
+  lockExpiresAt DateTime?
+  bookingId String? 
+  version Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([scheduleId, fromSeq, toSeq])
+  @@index([seatId])
+  @@index([bookingId])
+  @@map("seat_segment_locks")
 }

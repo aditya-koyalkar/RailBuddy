@@ -1,6 +1,6 @@
 import { logger } from "../config/logger.js";
 import { prisma } from "../config/prisma.js";
-import inventoryProducer from "../kafka/producer/admin.producer.js";
+import inventoryProducer from "../kafka/producer/inventory.producer.js";
 
 const initializeInventory = async (eventData: any) => {
     const { scheduleId, trainId, trainNumber, trainName, departureDate, seats } = eventData;
