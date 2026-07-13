@@ -3,10 +3,11 @@ import { prisma } from "../config/prisma.js";
 import inventoryProducer from "../kafka/producer/inventory.producer.js";
 
 const initializeInventory = async (eventData: any) => {
-    const { scheduleId, trainId, trainNumber, trainName, departureDate, seats } = eventData;
+    const payload = eventData.data || eventData;
+    const { scheduleId, trainId, trainNumber, trainName, departureDate, seats } = payload;
 
     if (!scheduleId || !seats) {
-        logger.warn(`Inventory initialization failed: Missing scheduleId or seats`);
+        logger.warn(`Inventory initialization failed: Missing scheduleId or seats`, { scheduleId, hasSeats: !!seats });
         return;
     }
 
@@ -53,8 +54,8 @@ const initializeInventory = async (eventData: any) => {
             data: seatData
         })
 
-        if (eventData.route && eventData.route.length > 0) {
-            const routeStopData = eventData.route.map((routeStop: any) => ({
+        if (payload.route && payload.route.length > 0) {
+            const routeStopData = payload.route.map((routeStop: any) => ({
                 scheduleId,
                 stationId: routeStop.stationId,
                 stationName: routeStop.stationName,

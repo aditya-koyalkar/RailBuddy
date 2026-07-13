@@ -34,10 +34,29 @@ class AdminProducer {
         })
     }
 
-    async publishScheduleCreated(schedule: Schedule) {
+    async publishScheduleCreated(schedule: Schedule, train: any) {
+        const payload = {
+            scheduleId: schedule.id,
+            trainId: train.id,
+            trainNumber: train.trainNumber,
+            trainName: train.trainName,
+            departureDate: schedule.departureDate,
+            seats: train.seats.map((seat: any) => ({
+                seatNumber: seat.seatNumber,
+                seatType: seat.seatType,
+                price: seat.price
+            })),
+            route: train.route?.routeStations.map((rs: any) => ({
+                stationId: rs.stationId,
+                stationName: rs.station.name,
+                stationCode: rs.station.code,
+                sequenceNumber: rs.sequenceNumber
+            })) || []
+        };
         return this.sendMessage(TOPICS.SCHEDULE_CREATED, `schedule-${schedule.id}`, {
             eventType: 'SCHEDULE_CREATED',
-            data: schedule, timeStamp: new Date().toISOString()
+            data: payload,
+            timeStamp: new Date().toISOString()
         })
     }
 

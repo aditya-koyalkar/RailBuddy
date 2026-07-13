@@ -26,7 +26,7 @@ class InventoryConsumer {
                     offset: message.offset,
                     value: message.value?.toString(),
                 });
-                const value = JSON.parse(message.value?.toString() || "")
+                // const value = JSON.parse(message.value?.toString() || "")
                 switch (topic) {
 
                 }

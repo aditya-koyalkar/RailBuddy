@@ -7,6 +7,7 @@ import { corsMiddleware } from "./middlewares/cors.middleware.js";
 import { logger } from "./config/logger.js";
 import { reqLogger } from "./middlewares/req.middleware.js";
 import inventoryConsumer from "./kafka/consumer/inventory.consumer.js";
+import inventoryRoutes from "./routes/inventory.route.js";
 
 const app = express();
 
@@ -17,6 +18,7 @@ app.use(cookieParser());
 app.use(express.json())
 app.use(reqLogger)
 
+app.use('/api/inventory', inventoryRoutes);
 
 app.get("/", (_req, res) => {
     res.status(200).json({

@@ -66,13 +66,12 @@ class EmailConsumer {
     async handleWelcomeEmail(data: any) {
         const { email } = data;
         if (!email) {
-            throw new Error("Missing required data email or otp")
+            throw new Error("Missing required data email")
         }
         await emailService.sendWelcomeEmail(email);
-        logger.info(`OTP email sent to ${email}`)
+        logger.info(`Welcome email sent to ${email}`)
 
     }
 }
 
 export const emailConsumer = new EmailConsumer()
-

@@ -222,7 +222,7 @@ const createSchedule = async ({ trainId, departureDate, status }: CreateSchedule
 
     logger.info("Schedule created successfully", { id: schedule.id, trainId: schedule.trainId })
 
-    await adminProducer.publishScheduleCreated(schedule).catch((error) => {
+    await adminProducer.publishScheduleCreated(schedule, train).catch((error) => {
         logger.error('Failed to publish schedule create event', { error: error.message })
     })
 

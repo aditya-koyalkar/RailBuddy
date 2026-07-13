@@ -318,7 +318,7 @@ const resolveStation = async (input: string) => {
         const suggestResult = await esClient.search({
             index: STATION_INDEX,
             suggest: {
-                stattion_suggest: {
+                station_suggest: {
                     prefix: input,
                     completion: {
                         field: "suggest",

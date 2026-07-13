@@ -28,7 +28,7 @@ const createBooking = async (userId: string, scheduleId: string, seatIds: Array<
 
     const availability = await inventoryClient.getAvailability(scheduleId)
 
-    if (availability.status === 'ACTIVE') {
+    if (availability.status !== 'ACTIVE') {
         throw new BadRequestError('Schedule is not active');
     }
 
@@ -235,7 +235,7 @@ async function saveIdenpotency(key: string, value: any) {
     await prisma.idempotencyRecord.create({
         data: {
             eventKey: key,
-            response: JSON.stringify(value),
+            response: value,
         }
     })
 }

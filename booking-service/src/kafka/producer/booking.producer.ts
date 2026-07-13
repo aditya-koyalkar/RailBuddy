@@ -1,6 +1,5 @@
 import { connectProducer, producer } from "../../config/kafka";
 import { logger } from "../../config/logger";
-import { TOPICS } from "../../utils/constants";
 
 class InventoryProducer {
     isInitialized;

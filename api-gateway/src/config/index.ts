@@ -18,4 +18,5 @@ export const config = {
     CIRCUIT_BREAKER_TIMEOUT: parseInt(process.env.CIRCUIT_BREAKER_TIMEOUT || '300000', 10),
     SERVICE_TIMEOUT_MS: parseInt(process.env.SERVICE_TIMEOUT_MS || '50000', 10),
     SEARCH_SERVICE_URL: process.env.SEARCH_SERVICE_URL || "",
+    BOOKING_SERVICE_URL: process.env.BOOKING_SERVICE_URL || "http://localhost:4008",
 }

@@ -109,7 +109,15 @@ async function executeCreatePaymentOrder(booking: any) {
 
     }
     catch (error) {
-
+        await prisma.sagaLog.update({
+            where: { id: sagaLog.id },
+            data: {
+                status: "FAILED",
+                response: JSON.stringify(error)
+            }
+        });
+        logger.error(`Failed to create payment order for booking ${booking.id}`, error);
+        throw error;
     }
 }
 async function compensateAll(booking: any, seatIds: string[]) {

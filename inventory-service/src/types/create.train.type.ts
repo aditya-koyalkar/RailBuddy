@@ -1,5 +1,3 @@
-import { SeatType } from "@prisma/client";
-
 export type CreateTrainDTO = {
     trainNumber: string,
     trainName: string,
@@ -7,7 +5,7 @@ export type CreateTrainDTO = {
     totalSeats: number,
     seats: {
         seatNumber: number,
-        seatType: SeatType,
+        seatType: string,
         price: number
     }[]
 }

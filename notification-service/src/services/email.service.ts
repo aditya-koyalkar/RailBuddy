@@ -12,8 +12,8 @@ class EmailService {
     }
     async sendWithRetry(msg: any, retries = 0): Promise<any> {
         try {
-            sendgridMail.send(msg);
-            logger.info(`Email sent successfully to ${msg.email}`, {
+            await sendgridMail.send(msg);
+            logger.info(`Email sent successfully to ${msg.to}`, {
                 subject: msg.subject
             })
             return {
