@@ -1,0 +1,129 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+   provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+
+enum BookingStatus {
+  PENDING
+  SEATS_HELD
+  PAYMENT_PENDING
+  CONFIRMING
+  CONFIRMED
+  CANCELLING
+  FAILED
+  CANCELLED
+  EXPIRED
+}
+
+enum SagaStep {
+  HOLD_SEATS
+  CREATE_PAYMENT
+  CONFIRM_SEATS
+  COMPLETE
+}
+
+enum SagaStepStatus {
+  PENDING
+  COMPLETED
+  COMPENSATION
+  COMPENSATED
+  FAILED
+}
+
+model Booking {
+id String @id @default(uuid())
+userId String
+scheduleId String
+trainId String
+trainNumber String
+trainName String
+departureDate  DateTime @db.Date
+status  BookingStatus @default(PENDING)
+totalAmount Float @default(0)
+seatCount Int 
+fromStationId String?
+toStationId String?
+fromSeq Int?
+toSeq Int?
+idempotencyKey String @unique
+paymentOrderId String? @unique
+lockExpiresAt DateTime?
+failureReason String?
+version Int 
+
+
+sagaLogs SagaLog[]
+seats BookingSeat[]
+passengers Passenger[]
+
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+}
+
+model BookingSeat {
+  id String @id @default(uuid())
+  bookingId String
+  seatId String
+  seatType String
+  price Float
+  seatNumber Int
+  createdAt DateTime @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id],onDelete: Cascade)
+
+  @@unique([bookingId,seatId])
+  @@map("booking_seats")
+}
+
+model Passenger {
+  id String @id @default(uuid())
+  bookingId String
+  name String
+  age Int
+  gender String
+  seatId String?
+  createdAt DateTime @default(now())
+
+  booking Booking @relation(fields: [bookingId],references: [id],onDelete: Cascade)
+
+  @@map("passengers")
+}
+
+model SagaLog {
+  id String @id @default(uuid())
+  bookingId String
+  step SagaStep
+  status SagaStepStatus @default(PENDING)
+  request Json?
+  response Json?
+  error String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  booking Booking @relation(fields: [bookingId],references:[id])
+  
+
+  @@map("saga_logs")
+}
+
+model IdempotencyRecord {
+  id String @id @default(uuid())
+  eventKey String @unique
+  response Json?
+  processedAt DateTime @default(now())
+
+  @@index([eventKey])
+  @@map("idempotency_records")
+}
