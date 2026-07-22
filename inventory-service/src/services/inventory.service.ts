@@ -1,6 +1,7 @@
 import { logger } from "../config/logger.js";
 import { prisma } from "../config/prisma.js";
 import inventoryProducer from "../kafka/producer/inventory.producer.js";
+import { NotFoundError } from "../utils/error.js";
 
 const initializeInventory = async (eventData: any) => {
     const payload = eventData.data || eventData;
@@ -150,6 +151,28 @@ const cancelSheduleInventory = async (eventData: any) => {
 
 }
 
+export const getAvailability = async (scheduleId: string) => {
+    const availability = await prisma.scheduleInventory.findUnique({
+        where: { scheduleId }
+    });
+
+    if (!availability) {
+        throw new NotFoundError("Schedule inventory not found");
+    }
+    return {
+        scheduleId: availability.scheduleId,
+        trainId: availability.trainId,
+        trainNumber: availability.trainNumber,
+        trainName: availability.trainName,
+        departureDate: availability.departureDate,
+        totalSeats: availability.totalSeats,
+        available: availability.available,
+        locked: availability.locked,
+        booked: availability.booked,
+        status: availability.status
+    }
+}
 
 
-export default { initializeInventory, cancelSheduleInventory }
+
+export default { initializeInventory, cancelSheduleInventory, getAvailability }

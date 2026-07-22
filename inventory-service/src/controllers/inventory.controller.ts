@@ -4,21 +4,15 @@ import { logger } from "../config/logger.js";
 import { BadRequestError, NotFoundError, ConflictError } from "../utils/error.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import inventoryProducer from "../kafka/producer/inventory.producer.js";
+import inventoryService from "../services/inventory.service.js";
 
 export const getAvailability = asyncHandler(async (req: Request, res: Response) => {
     const scheduleId = req.params.scheduleId as string;
-    const availability = await prisma.scheduleInventory.findUnique({
-        where: { scheduleId }
-    });
-
-    if (!availability) {
-        throw new NotFoundError("Schedule inventory not found");
-    }
-
+    const availability = await inventoryService.getAvailability(scheduleId)
     return res.status(200).json({
         success: true,
         data: availability
-    });
+    })
 });
 
 export const getSeats = asyncHandler(async (req: Request, res: Response) => {
