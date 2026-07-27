@@ -301,16 +301,6 @@ export const lockSeats = async (
 
             const resolvedBookingId = bookingId || `temp-lock-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-            // Clean up expired locks for these seats to prevent row accumulation
-            await tx.seatSegmentReservation.deleteMany({
-                where: {
-                    scheduleId,
-                    seatId: { in: seatIds },
-                    status: "LOCKED",
-                    expiresAt: { lt: now }
-                }
-            });
-
             const lockData = scheduleSeats.map((si: any) => ({
                 scheduleInventoryId: schedule.id,
                 scheduleSeatId: si.id,
