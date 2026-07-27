@@ -1,8 +1,10 @@
+import { Prisma } from "@prisma/client";
 import { config } from "../config/index.js";
 import { logger } from "../config/logger.js";
 import { prisma } from "../config/prisma.js";
 import inventoryProducer from "../kafka/producer/inventory.producer.js";
 import { BadRequestError, ConflictError, NotFoundError } from "../utils/error.js";
+import { retryTransaction } from "../utils/retryTransaction.js";
 
 const getAvailabilityInternal = async (
     tx: any,
@@ -243,105 +245,81 @@ export const lockSeats = async (
         throw new BadRequestError("Missing required fields for locking seats");
     }
 
-    return await prisma.$transaction(async (tx) => {
-        const schedule = await tx.scheduleInventory.findUnique({
-            where: { scheduleId }
-        });
+    return retryTransaction(async () => {
+        await prisma.$transaction(async (tx) => {
+            const schedule = await tx.scheduleInventory.findUnique({
+                where: { scheduleId }
+            });
 
-        if (!schedule) {
-            throw new NotFoundError("Schedule inventory not found");
-        }
-        if (schedule.status !== "ACTIVE") {
-            throw new BadRequestError("Schedule is not active");
-        }
+            if (!schedule) {
+                throw new NotFoundError("Schedule inventory not found");
+            }
+            if (schedule.status !== "ACTIVE") {
+                throw new BadRequestError("Schedule is not active");
+            }
 
-        const seatInventories = await tx.seatInventory.findMany({
-            where: {
+            const seatInventories = await tx.$queryRaw`SELECT * FROM "SeatInventory" WHERE "scheduleId" = ${scheduleId} AND "seatId" IN (${Prisma.join(seatIds)}) FOR UPDATE NOWAIT` as any[];
+
+            if (seatInventories.length !== seatIds.length) {
+                throw new NotFoundError("One or more seats not found for this schedule");
+            }
+
+
+            const fromRouteStop = await tx.routeStop.findUnique({
+                where: { scheduleId_sequence: { scheduleId, sequence: fromSeqNum } }
+            });
+            const toRouteStop = await tx.routeStop.findUnique({
+                where: { scheduleId_sequence: { scheduleId, sequence: toSeqNum } }
+            });
+
+            if (!fromRouteStop || !toRouteStop) {
+                throw new BadRequestError("Invalid from/to sequences for this schedule route");
+            }
+
+            const overlapping = await tx.$queryRaw`SELECT * FROM "SeatSegmentReservation" WHERE "scheduleId" = ${scheduleId} AND "seatId" IN (${Prisma.join(seatIds)}) AND status IN ("LOCKED", "BOOKED") AND from_sequence < ${toSeqNum} AND to_sequence > ${fromSeqNum} FOR UPDATE NOWAIT` as any[];
+
+            if (overlapping.length > 0) {
+                const blockedSeatIds = [...new Set(overlapping.map((res: any) => res.seatId))]
+                throw new ConflictError(`One or more seats are already locked/booked for overlapping segment ${blockedSeatIds.join(",")}`)
+            }
+
+            const resolvedBookingId = bookingId || `temp-lock-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+            const lockData = seatInventories.map((si) => ({
+                scheduleInventoryId: schedule.id,
+                seatInventoryId: si.id,
+                bookingId: resolvedBookingId,
                 scheduleId,
-                seatId: { in: seatIds }
-            }
-        });
+                seatId: si.seatId,
+                fromStationId: fromRouteStop.stationId,
+                toStationId: toRouteStop.stationId,
+                fromSequence: fromSeqNum,
+                toSequence: toSeqNum,
+                status: "LOCKED" as const,
+                lockedBy: userId,
+                expiresAt: lockExpiresAt
+            }));
 
-        if (seatInventories.length !== seatIds.length) {
-            throw new NotFoundError("One or more seats not found for this schedule");
-        }
+            await tx.seatSegmentReservation.createMany({
+                data: lockData
+            });
 
-        const fromRouteStop = await tx.routeStop.findUnique({
-            where: { scheduleId_sequence: { scheduleId, sequence: fromSeqNum } }
-        });
-        const toRouteStop = await tx.routeStop.findUnique({
-            where: { scheduleId_sequence: { scheduleId, sequence: toSeqNum } }
-        });
-
-        if (!fromRouteStop || !toRouteStop) {
-            throw new BadRequestError("Invalid from/to sequences for this schedule route");
-        }
-
-        const activeReservations = await tx.seatSegmentReservation.findMany({
-            where: {
+            const availability = await getAvailabilityInternal(tx, scheduleId, schedule, fromSeqNum, toSeqNum);
+            await inventoryProducer.publishSeatAvailabilityUpdated(
                 scheduleId,
-                seatId: { in: seatIds },
-                status: { in: ["LOCKED", "BOOKED"] }
-            }
+                schedule.trainId,
+                schedule.totalSeats,
+                availability.locked,
+                availability.booked
+            ).catch((err) => logger.error(`Failed to publish seat availability: ${err.message}`));
+
+            return {
+                bookingId: resolvedBookingId,
+                expiresAt: lockExpiresAt
+            };
         });
+    })
 
-        const now = new Date();
-        const activeLocks = activeReservations.filter(
-            (res) => res.status === "BOOKED" || !res.expiresAt || res.expiresAt > now
-        );
-
-        for (const seatId of seatIds) {
-            const seatLocks = activeLocks.filter((res) => res.seatId === seatId);
-            const hasOverlap = seatLocks.some(
-                (lock) => fromSeqNum < lock.toSequence && toSeqNum > lock.fromSequence
-            );
-            if (hasOverlap) {
-                throw new ConflictError(`Seat ${seatId} is already locked/booked for overlapping segment`);
-            }
-        }
-
-        const resolvedBookingId = bookingId || `temp-lock-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-        const lockData = seatInventories.map((si) => ({
-            scheduleInventoryId: schedule.id,
-            seatInventoryId: si.id,
-            bookingId: resolvedBookingId,
-            scheduleId,
-            seatId: si.seatId,
-            fromStationId: fromRouteStop.stationId,
-            toStationId: toRouteStop.stationId,
-            fromSequence: fromSeqNum,
-            toSequence: toSeqNum,
-            status: "LOCKED" as const,
-            lockedBy: userId,
-            expiresAt: lockExpiresAt
-        }));
-
-        await tx.seatSegmentReservation.createMany({
-            data: lockData
-        });
-
-        await tx.scheduleInventory.update({
-            where: { scheduleId },
-            data: {
-                version: { increment: 1 }
-            }
-        });
-
-        const availability = await getAvailabilityInternal(tx, scheduleId, schedule, fromSeqNum, toSeqNum);
-        await inventoryProducer.publishSeatAvailabilityUpdated(
-            scheduleId,
-            schedule.trainId,
-            schedule.totalSeats,
-            availability.locked,
-            availability.booked
-        ).catch((err) => logger.error(`Failed to publish seat availability: ${err.message}`));
-
-        return {
-            bookingId: resolvedBookingId,
-            expiresAt: lockExpiresAt
-        };
-    });
 };
 
 export const unlockSeats = async (
@@ -554,7 +532,7 @@ export const getSeats = async (
 
     let resultSeats = seats.map(seat => {
         const seatReservations = activeReservations.filter(res => res.seatId === seat.seatId);
-        
+
         let segmentStatus = "AVAILABLE";
         if (fromSeq !== undefined && toSeq !== undefined) {
             const fromSeqNum = Number(fromSeq);
