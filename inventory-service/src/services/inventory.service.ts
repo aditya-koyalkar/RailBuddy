@@ -258,6 +258,7 @@ export const lockSeats = async (
                 throw new BadRequestError("Schedule is not active");
             }
 
+            // Though seat inventory is not used for storing availability it can be used for
             const seatInventories = await tx.$queryRaw`SELECT * FROM "SeatInventory" WHERE "scheduleId" = ${scheduleId} AND "seatId" IN (${Prisma.join(seatIds)}) FOR UPDATE NOWAIT` as any[];
 
             if (seatInventories.length !== seatIds.length) {
@@ -276,32 +277,38 @@ export const lockSeats = async (
                 throw new BadRequestError("Invalid from/to sequences for this schedule route");
             }
 
-            const activeReservations = await tx.seatSegmentReservation.findMany({
+            const now = new Date();
+
+            const conflict = await tx.seatSegmentReservation.findFirst({
                 where: {
                     scheduleId,
                     seatId: { in: seatIds },
-                    status: { in: ["LOCKED", "BOOKED"] }
-                }
+                    fromSequence: { lt: toSeqNum },
+                    toSequence: { gt: fromSeqNum },
+                    OR: [
+                        { status: "BOOKED" },
+                        { status: "LOCKED", expiresAt: null },
+                        { status: "LOCKED", expiresAt: { gt: now } }
+                    ]
+                },
+                select: { seatId: true }
             });
 
-            const now = new Date();
-
-
-            const activeLocks = activeReservations.filter(
-                (res) => res.status === "BOOKED" || !res.expiresAt || res.expiresAt > now
-            );
-
-            for (const seatId of seatIds) {
-                const seatLocks = activeLocks.filter((res) => res.seatId === seatId);
-                const hasOverlap = seatLocks.some(
-                    (lock) => fromSeqNum < lock.toSequence && toSeqNum > lock.fromSequence
-                );
-                if (hasOverlap) {
-                    throw new ConflictError(`Seat ${seatId} is already locked/booked for overlapping segment`);
-                }
+            if (conflict) {
+                throw new ConflictError(`Seat ${conflict.seatId} is already locked/booked for overlapping segment`);
             }
 
             const resolvedBookingId = bookingId || `temp-lock-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+            // Clean up expired locks for these seats to prevent row accumulation
+            await tx.seatSegmentReservation.deleteMany({
+                where: {
+                    scheduleId,
+                    seatId: { in: seatIds },
+                    status: "LOCKED",
+                    expiresAt: { lt: now }
+                }
+            });
 
             const lockData = seatInventories.map((si) => ({
                 scheduleInventoryId: schedule.id,
