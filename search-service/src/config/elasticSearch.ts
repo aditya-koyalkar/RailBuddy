@@ -96,7 +96,8 @@ export const initIndices = async () => {
                             departureDate: { type: "date" },
                             status: { type: "keyword" },
                             available: { type: "integer" },
-                            locked: { type: "integer" }
+                            locked: { type: "integer" },
+                            booked: { type: "integer" }
                         }
                     },
                     seatSummary: {

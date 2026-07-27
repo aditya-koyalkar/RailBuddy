@@ -141,7 +141,7 @@ const indexTrainRoute = async (routeEvent: any) => {
 
 const indexSchedule = async (scheduleEvent: any) => {
     const schedule = scheduleEvent?.data || {};
-    const { id: scheduleId, trainId, departureDate, status, seats } = schedule;
+    const { scheduleId, trainId, departureDate, status, seats } = schedule;
     if (!scheduleId) {
         return;
     }
