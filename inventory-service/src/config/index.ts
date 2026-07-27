@@ -10,5 +10,6 @@ export const config = {
     KAFKA_CLIENT_ID: process.env.KAFKA_CLIENT_ID || "",
     KAFKA_BROKER: process.env.KAFKA_BROKER || 'localhost:9093',
     ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS || "",
-    PORT: process.env.PORT || 4001
+    PORT: process.env.PORT || 4001,
+    LOCK_TTL_SECONDS: Number(process.env.LOCK_TTL_SECONDS) || 600,
 }

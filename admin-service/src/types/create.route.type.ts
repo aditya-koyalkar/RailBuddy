@@ -1,10 +1,13 @@
 export type CreateRouteDTO = {
-    trainId: string,
-    routeStations: {
-        stationId: string,
-        arrivalTime: string,
-        departureTime: string,
-        sequenceNumber: number,
-        distanceFromOrigin: number
-    }[]
+    trainId: string;
+    stops: {
+        stationId: string;
+        sequence: number;
+        arrivalDay?: number | null;
+        departureDay?: number | null;
+        arrivalMinute?: number | null;
+        departureMinute?: number | null;
+        haltMinutes?: number | null;
+    }[];
 }
+

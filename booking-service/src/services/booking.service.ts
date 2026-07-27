@@ -4,9 +4,33 @@ import { prisma } from "../config/prisma"
 import { acquireSeatLocks, releaseSeatLocks } from "../utils/distributedLock"
 import { BadRequestError, ConflictError, NotFoundError } from "../utils/error"
 import inventoryClient from "./inventoryClient"
+import adminClient from "./adminClient"
 import sagaService from "./saga.service"
 
-const createBooking = async (userId: string, scheduleId: string, seatIds: Array<string>, passengers: Array<string>, idempotencyKey: string, fromStationId: string, toStationId: string, fromSeq: number, toSeq: number, trainId: string) => {
+const normalizeGender = (g: string) => {
+    const upper = String(g).toUpperCase();
+    if (upper === "MALE" || upper === "FEMALE" || upper === "OTHER") {
+        return upper as any;
+    }
+    return "OTHER" as any;
+};
+
+const generatePNR = () => {
+    return Math.floor(1000000000 + Math.random() * 9000000000).toString();
+}
+
+const createBooking = async (
+    userId: string,
+    scheduleId: string,
+    seatIds: Array<string>,
+    passengers: Array<any>,
+    idempotencyKey: string,
+    fromStationId: string,
+    toStationId: string,
+    fromSeq: number,
+    toSeq: number,
+    trainId: string
+) => {
     if (!userId || !scheduleId || !seatIds || !passengers || !idempotencyKey || !trainId) {
         throw new Error("All fields are required")
     }
@@ -16,7 +40,7 @@ const createBooking = async (userId: string, scheduleId: string, seatIds: Array<
     if (!Array.isArray(passengers) || passengers.length !== seatIds.length) {
         throw new Error("Passengers are required and must be equal to the number of seats")
     }
-    if (fromSeq >= toSeq) {
+    if (Number(fromSeq) >= Number(toSeq)) {
         throw new Error("fromSeq must be less than toSeq")
     }
 
@@ -44,7 +68,7 @@ const createBooking = async (userId: string, scheduleId: string, seatIds: Array<
 
     const seatMap = new Map(seatData.seats.map((s: any) => [s.seatId, s]))
 
-    const bookingSeats = [];
+    const bookingSeats: any[] = [];
     let totalAmount = 0;
 
     for (const seatId of seatIds) {
@@ -54,15 +78,14 @@ const createBooking = async (userId: string, scheduleId: string, seatIds: Array<
             throw new NotFoundError(`Seat ${seatId} not found`)
         }
 
-        const isAvailable = (fromSeq && toSeq && seat.segmentStatus !== undefined) ? seat.segmentStatus === 'AVAILABLE' : seat.status === 'AVAILABLE';
+        const isAvailable = seat.segmentStatus === 'AVAILABLE';
 
         if (!isAvailable) {
             throw new BadRequestError(`Seat ${seatId} is not available`, 'SEAT_UNAVAILABLE');
         }
 
-
         bookingSeats.push(seat);
-        totalAmount += seat.price;
+        totalAmount += Number(seat.price || 0);
     }
 
     const sortedSeatIds = [...seatIds].sort();
@@ -73,80 +96,98 @@ const createBooking = async (userId: string, scheduleId: string, seatIds: Array<
         throw new ConflictError(`One or more seats are being already being booked by other user.Please try again.`);
     }
 
-    let booking;
+    let booking: any;
 
     try {
-
         const lockExpiresAt = new Date(Date.now() + config.BOOKING_TTL_SECONDS * 1000);
 
-        booking = {
-            userId,
-            scheduleId,
-            seats: bookingSeats,
-            totalAmount,
-            status: 'PENDING',
-            createdAt: new Date(),
-            expiresAt: lockExpiresAt,
-            lockValue: lockValue,
+        // Fetch train details from admin service
+        const train = await adminClient.getTrainDetails(trainId, userId);
+        const stops = train.route?.stops || [];
+        const fromStop = stops.find((s: any) => s.stationId === fromStationId);
+        const toStop = stops.find((s: any) => s.stationId === toStationId);
 
-        }
-        booking = await prisma.booking.create({
-            data: {
-                userId,
-                scheduleId,
-                status: 'PENDING',
-                departureDate: new Date(availability.departureDate),
-                trainId: availability.trainId,
-                trainName: availability.trainName,
-                totalAmount,
-                seatCount: seatIds.length,
-                fromStationId: fromStationId || null,
-                toStationId: toStationId || null,
-                fromSeq: fromSeq || null,
-                toSeq: toSeq || null,
-                idempotencyKey,
-                lockExpiresAt,
-                trainNumber: availability.trainNumber,
-                version: availability.version,
-                seats: {
-                    create: bookingSeats.map(seat => ({
-                        seatId: seat.seatId,
-                        seatNumber: seat.seatNumber,
-                        class: seat.class,
-                        price: seat.price,
-                        seatType: seat.seatType
-                    }))
-                },
-                passengers: {
-                    create: passengers.map((passenger: any) => ({
-                        name: passenger.name,
-                        age: passenger.age,
-                        gender: passenger.gender,
+        const fromStationCode = fromStop?.station?.code || "";
+        const fromStationName = fromStop?.station?.name || "";
+        const toStationCode = toStop?.station?.code || "";
+        const toStationName = toStop?.station?.name || "";
 
-                    }))
+        const pnr = generatePNR();
+
+        booking = await prisma.$transaction(async (tx) => {
+            const created = await tx.booking.create({
+                data: {
+                    pnr,
+                    userId,
+                    scheduleId,
+                    trainId,
+                    trainNumber: train.trainNumber,
+                    trainName: train.name,
+                    departureDate: new Date(availability.departureDate),
+                    fromStationId,
+                    fromStationCode,
+                    fromStationName,
+                    toStationId,
+                    toStationCode,
+                    toStationName,
+                    fromSequence: Number(fromSeq),
+                    toSequence: Number(toSeq),
+                    passengerCount: passengers.length,
+                    totalFare: totalAmount,
+                    status: 'PENDING',
+                    idempotencyKey,
+                    expiresAt: lockExpiresAt,
+                    version: availability.version,
+                    passengers: {
+                        create: passengers.map((p: any) => ({
+                            name: p.name,
+                            age: Number(p.age),
+                            gender: normalizeGender(p.gender)
+                        }))
+                    }
                 },
-            },
-            include: {
-                seats: true,
-                passengers: true
-            }
+                include: {
+                    passengers: true
+                }
+            });
+
+            const seatAssignmentsData = created.passengers.map((passenger, index) => {
+                const seat = bookingSeats[index];
+                return {
+                    bookingId: created.id,
+                    passengerId: passenger.id,
+                    seatId: seat.seatId,
+                    coachNumber: seat.coachNumber || "A1",
+                    coachType: seat.coachType || "SLEEPER",
+                    seatNumber: Number(seat.seatNumber),
+                    seatLabel: seat.seatLabel || String(seat.seatNumber),
+                    seatType: seat.seatType,
+                    fare: seat.price || 0
+                };
+            });
+
+            await tx.seatAssignment.createMany({
+                data: seatAssignmentsData
+            });
+
+            return created;
         });
 
         // Execute saga step 1 : Hold seats in inventory
-
         await sagaService.executeHoldSeats(booking, sortedSeatIds, config.LOCK_TTL_SECONDS, fromSeq, toSeq)
 
         // Execute saga step 2 :  Create payment order
-
-        const paymentOrder = await sagaService.executeCreatePaymentOrder(booking)
-
+        const reloadedBooking = await prisma.booking.findUnique({
+            where: { id: booking.id }
+        });
+        const paymentOrder = await sagaService.executeCreatePaymentOrder(reloadedBooking!)
 
         booking = await prisma.booking.findUnique({
             where: {
                 id: booking.id
             },
             include: {
-                seats: true,
+                seatAssignments: true,
                 passengers: true
             }
         })
@@ -157,17 +198,21 @@ const createBooking = async (userId: string, scheduleId: string, seatIds: Array<
 
         const response = {
             bookingId: booking.id,
+            pnr: booking.pnr,
             userId: booking.userId,
             status: booking.status,
-            totalAmount: booking.totalAmount,
-            lockExpiresAt: booking.lockExpiresAt,
-            seats: booking.seats.map(seat => ({
+            totalAmount: Number(booking.totalFare),
+            lockExpiresAt: booking.expiresAt,
+            seats: booking.seatAssignments.map((seat: any) => ({
                 seatId: seat.seatId,
                 seatNumber: seat.seatNumber,
-                price: seat.price,
+                price: Number(seat.fare),
                 seatType: seat.seatType,
+                coachNumber: seat.coachNumber,
+                coachType: seat.coachType,
+                seatLabel: seat.seatLabel
             })),
-            passengers: booking.passengers.map(passenger => ({
+            passengers: booking.passengers.map((passenger: any) => ({
                 name: passenger.name,
                 age: passenger.age,
                 gender: passenger.gender,
@@ -193,7 +238,6 @@ const createBooking = async (userId: string, scheduleId: string, seatIds: Array<
         })
 
         // Compensate on failure
-
         if (booking) {
             await sagaService.compensateAll(booking, sortedSeatIds);
             await prisma.booking.update({
@@ -205,9 +249,7 @@ const createBooking = async (userId: string, scheduleId: string, seatIds: Array<
                     failureReason: error.response?.data?.message || error.message
                 }
             })
-            // Release Redis locks(segment-aware)
             await releaseSeatLocks(scheduleId, sortedSeatIds, lockValue!, fromSeq, toSeq)
-
         }
 
         throw error
@@ -215,10 +257,9 @@ const createBooking = async (userId: string, scheduleId: string, seatIds: Array<
 }
 
 async function checkIdempotency(key: string) {
-
     const record = await prisma.idempotencyRecord.findUnique({
         where: {
-            eventKey: key
+            key: key
         }
     })
 
@@ -230,15 +271,13 @@ async function checkIdempotency(key: string) {
     return null;
 }
 
-
 async function saveIdenpotency(key: string, value: any) {
     await prisma.idempotencyRecord.create({
         data: {
-            eventKey: key,
+            key: key,
             response: value,
         }
     })
 }
-
 
 export default { createBooking }

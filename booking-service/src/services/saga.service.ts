@@ -1,13 +1,13 @@
-import { logger } from "../config/logger";
-import { prisma } from "../config/prisma";
-import inventoryClient from "./inventoryClient";
-import paymentClient from "./paymentClient";
+import { logger } from "../config/logger"
+import { prisma } from "../config/prisma"
+import inventoryClient from "./inventoryClient"
+import paymentClient from "./paymentClient"
 
 async function executeHoldSeats(booking: any, seatIds: any[], ttlSeconds: number, fromSeq: number, toSeq: number) {
     const sagaLog = await prisma.sagaLog.create({
         data: {
             bookingId: booking.id,
-            step: "HOLD_SEATS",
+            step: "LOCK_SEATS",
             status: "PENDING",
             request: {
                 scheduleId: booking.scheduleId,
@@ -33,11 +33,10 @@ async function executeHoldSeats(booking: any, seatIds: any[], ttlSeconds: number
         await prisma.booking.update({
             where: { id: booking.id },
             data: {
-                status: "SEATS_HELD",
-
+                status: "SEATS_LOCKED"
             }
         })
-        logger.info(`Seats held for booking ${booking.id}`, {
+        logger.info(`Seats held/locked for booking ${booking.id}`, {
             scheduleId: booking.scheduleId,
             seatIds,
             userId: booking.userId,
@@ -56,14 +55,13 @@ async function executeHoldSeats(booking: any, seatIds: any[], ttlSeconds: number
                 response: JSON.stringify(error)
             }
         })
-        logger.error(`Failed to hold seats for booking ${booking.id}`, error);
+        logger.error(`Failed to lock seats for booking ${booking.id}`, error);
         throw error
     }
 }
 
 async function executeCreatePaymentOrder(booking: any) {
     const indempotencyKey = `${booking.id}-payment`;
-
 
     const sagaLog = await prisma.sagaLog.create({
         data: {
@@ -72,7 +70,7 @@ async function executeCreatePaymentOrder(booking: any) {
             status: "PENDING",
             request: {
                 bookingId: booking.id,
-                amount: booking.totalAmount,
+                amount: Number(booking.totalFare),
                 userId: booking.userId,
             }
         }
@@ -80,7 +78,7 @@ async function executeCreatePaymentOrder(booking: any) {
     try {
         const result = await paymentClient.createPaymentOrder(
             booking.id,
-            booking.totalAmount,
+            Number(booking.totalFare),
             booking.userId,
             indempotencyKey
         )
@@ -92,16 +90,29 @@ async function executeCreatePaymentOrder(booking: any) {
                 response: result
             }
         })
+
+        // Create Payment record in separate table
+        await prisma.payment.create({
+            data: {
+                bookingId: booking.id,
+                provider: "razorpay",
+                orderId: result.orderId,
+                amount: booking.totalFare,
+                currency: result.currency || "INR",
+                status: "PENDING"
+            }
+        })
+
         await prisma.booking.update({
             where: { id: booking.id },
             data: {
-                status: "PAYMENT_PENDING",
-                paymentOrderId: result.orderId,
+                status: "PAYMENT_PENDING"
             }
         })
+
         logger.info(`Payment order created for booking ${booking.id}`, {
             bookingId: booking.id,
-            amount: booking.totalAmount,
+            amount: booking.totalFare,
             userId: booking.userId,
             paymentOrderId: result.orderId
         })
@@ -120,6 +131,7 @@ async function executeCreatePaymentOrder(booking: any) {
         throw error;
     }
 }
+
 async function compensateAll(booking: any, seatIds: string[]) {
     const sagaLogs = await prisma.sagaLog.findMany({
         where: {
@@ -135,13 +147,12 @@ async function compensateAll(booking: any, seatIds: string[]) {
             case 'CREATE_PAYMENT':
                 await compensateCreatePayment(booking)
                 break;
-            case 'HOLD_SEATS':
+            case 'LOCK_SEATS':
                 await compensateHoldSeats(booking, seatIds)
                 break;
         }
     }
 }
-
 
 async function compensateConfirmSeats(booking: any) {
     logger.info(`Compensating confirm seats for booking ${booking.id}`)
@@ -153,14 +164,16 @@ async function compensateConfirmSeats(booking: any) {
             error: error.message
         })
     }
-
 }
 
 async function compensateCreatePayment(booking: any) {
     logger.info(`Compensating create payment for booking ${booking.id}`)
     try {
-        // TODO
-
+        // Update payment status to FAILED or REFUNDED
+        await prisma.payment.updateMany({
+            where: { bookingId: booking.id },
+            data: { status: "FAILED" }
+        })
     }
     catch (error: any) {
         logger.error(`Failed to compensate create payment for booking ${booking.id}`, {
@@ -170,16 +183,15 @@ async function compensateCreatePayment(booking: any) {
 }
 
 async function compensateHoldSeats(booking: any, seatIds: string[]) {
-    logger.info(`Compensating hold seats for booking ${booking.id}`)
+    logger.info(`Compensating hold/lock seats for booking ${booking.id}`)
     try {
-        await inventoryClient.releaseSeats(booking.scheduleId, seatIds, booking.userId, booking.fromSeq, booking.toSeq);
+        await inventoryClient.releaseSeats(booking.scheduleId, seatIds, booking.userId, booking.fromSequence, booking.toSequence);
 
         // Mark saga step as compensated
-
         await prisma.sagaLog.updateMany({
             where: {
                 bookingId: booking.id,
-                step: "HOLD_SEATS",
+                step: "LOCK_SEATS",
                 status: "COMPLETED"
             },
             data: {
@@ -188,7 +200,7 @@ async function compensateHoldSeats(booking: any, seatIds: string[]) {
         })
     }
     catch (error: any) {
-        logger.error(`Failed to compensate hold seats for booking ${booking.id}`, {
+        logger.error(`Failed to compensate lock seats for booking ${booking.id}`, {
             error: error.message
         })
     }

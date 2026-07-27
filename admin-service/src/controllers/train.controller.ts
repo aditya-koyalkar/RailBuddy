@@ -3,22 +3,23 @@ import { asyncHandler } from "../utils/asyncHandler";
 import { BadRequestError } from "../utils/error";
 
 export const createTrain = asyncHandler(async (req, res) => {
-    const { trainNumber, trainName, coachName, totalSeats, seats } = req.body;
+    const { trainNumber, name, coaches, fares } = req.body;
 
-    if (!trainNumber || !trainName || !coachName || !totalSeats) {
-        throw new BadRequestError("All details are required");
+    if (!trainNumber || !name || !coaches || !Array.isArray(coaches) || coaches.length === 0) {
+        throw new BadRequestError("Train number, name, and at least one coach are required");
     }
 
-    if (!seats || !Array.isArray(seats) || seats.length === 0) {
-        throw new BadRequestError("At least one seat needs to be present");
+    for (const coach of coaches) {
+        if (!coach.coachNumber || !coach.coachType || !coach.seats || !Array.isArray(coach.seats) || coach.seats.length === 0) {
+            throw new BadRequestError("All coaches must have coachNumber, coachType, and at least one seat");
+        }
     }
 
     const train = await trainService.createTrain({
         trainNumber,
-        trainName,
-        coachName,
-        totalSeats,
-        seats
+        name,
+        coaches,
+        fares
     });
 
     return res.status(201).json({
@@ -29,17 +30,17 @@ export const createTrain = asyncHandler(async (req, res) => {
 });
 
 export const createRoute = asyncHandler(async (req, res) => {
-    const { trainId, routeStations } = req.body;
+    const { trainId, stops } = req.body;
 
-    if (!trainId || !routeStations || routeStations.length == 0) {
-        throw new BadRequestError("All details are required");
+    if (!trainId || !stops || !Array.isArray(stops) || stops.length === 0) {
+        throw new BadRequestError("Train ID and stops are required");
     }
 
-    if (routeStations.length == 1) {
-        throw new BadRequestError("At least two stations are required");
+    if (stops.length < 2) {
+        throw new BadRequestError("At least two stops are required");
     }
 
-    const train = await trainService.createRoute(trainId, routeStations);
+    const train = await trainService.createRoute(trainId, stops);
 
     return res.status(201).json({
         success: true,

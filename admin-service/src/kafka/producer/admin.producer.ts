@@ -39,18 +39,41 @@ class AdminProducer {
             scheduleId: schedule.id,
             trainId: train.id,
             trainNumber: train.trainNumber,
-            trainName: train.trainName,
+            trainName: train.name,
             departureDate: schedule.departureDate,
-            seats: train.seats.map((seat: any) => ({
-                seatNumber: seat.seatNumber,
-                seatType: seat.seatType,
-                price: seat.price
+            coaches: train.coaches.map((coach: any) => ({
+                coachId: coach.id,
+                coachNumber: coach.coachNumber,
+                coachType: coach.coachType,
+                seats: coach.seats.map((seat: any) => ({
+                    seatId: seat.id,
+                    seatNumber: seat.seatNumber,
+                    seatLabel: seat.seatLabel,
+                    seatType: seat.seatType
+                }))
             })),
-            route: train.route?.routeStations.map((rs: any) => ({
-                stationId: rs.stationId,
-                stationName: rs.station.name,
-                stationCode: rs.station.code,
-                sequenceNumber: rs.sequenceNumber
+            seats: train.coaches.flatMap((coach: any) =>
+                coach.seats.map((seat: any) => ({
+                    seatId: seat.id,
+                    coachId: coach.id,
+                    coachNumber: coach.coachNumber,
+                    coachType: coach.coachType,
+                    seatNumber: seat.seatNumber,
+                    seatLabel: seat.seatLabel,
+                    seatType: seat.seatType
+                }))
+            ),
+            route: train.route?.stops.map((stop: any) => ({
+                stationId: stop.stationId,
+                stationName: stop.station.name,
+                stationCode: stop.station.code,
+                sequenceNumber: stop.sequence,
+                sequence: stop.sequence,
+                arrivalDay: stop.arrivalDay,
+                departureDay: stop.departureDay,
+                arrivalMinute: stop.arrivalMinute,
+                departureMinute: stop.departureMinute,
+                haltMinutes: stop.haltMinutes
             })) || []
         };
         return this.sendMessage(TOPICS.SCHEDULE_CREATED, `schedule-${schedule.id}`, {
@@ -59,6 +82,7 @@ class AdminProducer {
             timeStamp: new Date().toISOString()
         })
     }
+
 
 
     async sendMessage(topic: string, key: string, value: any) {

@@ -1,11 +1,5 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
-   provider = "prisma-client-js"
+  provider = "prisma-client-js"
 }
 
 datasource db {
@@ -13,117 +7,230 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-
 enum BookingStatus {
   PENDING
-  SEATS_HELD
+  SEATS_LOCKED
   PAYMENT_PENDING
-  CONFIRMING
   CONFIRMED
-  CANCELLING
   FAILED
   CANCELLED
   EXPIRED
 }
 
+enum PassengerGender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
 enum SagaStep {
-  HOLD_SEATS
+  LOCK_SEATS
   CREATE_PAYMENT
   CONFIRM_SEATS
+  CANCEL_SEATS
   COMPLETE
 }
 
-enum SagaStepStatus {
+enum SagaStatus {
   PENDING
   COMPLETED
-  COMPENSATION
-  COMPENSATED
   FAILED
+  COMPENSATED
 }
 
 model Booking {
-id String @id @default(uuid())
-userId String
-scheduleId String
-trainId String
-trainNumber String
-trainName String
-departureDate  DateTime @db.Date
-status  BookingStatus @default(PENDING)
-totalAmount Float @default(0)
-seatCount Int 
-fromStationId String?
-toStationId String?
-fromSeq Int?
-toSeq Int?
-idempotencyKey String @unique
-paymentOrderId String? @unique
-lockExpiresAt DateTime?
-failureReason String?
-version Int 
-
-
-sagaLogs SagaLog[]
-seats BookingSeat[]
-passengers Passenger[]
-
-createdAt DateTime @default(now())
-updatedAt DateTime @updatedAt
-}
-
-model BookingSeat {
   id String @id @default(uuid())
-  bookingId String
-  seatId String
-  seatType String
-  price Float
-  seatNumber Int
+
+  pnr String @unique
+
+  userId String
+
+  scheduleId String
+
+  trainId String
+
+  trainNumber String
+
+  trainName String
+
+  departureDate DateTime @db.Date
+
+  fromStationId String
+
+  fromStationCode String
+
+  fromStationName String
+
+  toStationId String
+
+  toStationCode String
+
+  toStationName String
+
+  fromSequence Int
+
+  toSequence Int
+
+  passengerCount Int
+
+  totalFare Decimal @db.Decimal(10, 2)
+
+  status BookingStatus @default(PENDING)
+
+  idempotencyKey String @unique
+
+  version Int @default(0)
+
+  failureReason String?
+
+  confirmedAt DateTime?
+
+  cancelledAt DateTime?
+
+  expiresAt DateTime?
+
   createdAt DateTime @default(now())
 
-  booking Booking @relation(fields: [bookingId], references: [id],onDelete: Cascade)
+  updatedAt DateTime @updatedAt
 
-  @@unique([bookingId,seatId])
-  @@map("booking_seats")
+  passengers Passenger[]
+
+  seatAssignments SeatAssignment[]
+
+  payment Payment?
+
+  sagaLogs SagaLog[]
+
+  @@index([userId])
+  @@index([scheduleId])
+  @@index([pnr])
+  @@index([status])
+  @@map("bookings")
 }
 
 model Passenger {
   id String @id @default(uuid())
+
   bookingId String
+
   name String
+
   age Int
-  gender String
-  seatId String?
+
+  gender PassengerGender
+
   createdAt DateTime @default(now())
 
-  booking Booking @relation(fields: [bookingId],references: [id],onDelete: Cascade)
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  seatAssignment SeatAssignment?
 
   @@map("passengers")
 }
 
+model SeatAssignment {
+  id String @id @default(uuid())
+
+  bookingId String
+
+  passengerId String @unique
+
+  seatId String
+
+  coachNumber String
+
+  coachType String
+
+  seatNumber Int
+
+  seatLabel String
+
+  seatType String
+
+  fare Decimal @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now())
+
+  booking   Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  passenger Passenger @relation(fields: [passengerId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@map("seat_assignments")
+}
+
+model Payment {
+  id String @id @default(uuid())
+
+  bookingId String @unique
+
+  provider String
+
+  orderId String @unique
+
+  transactionId String?
+
+  amount Decimal @db.Decimal(10, 2)
+
+  currency String
+
+  status PaymentStatus
+
+  paidAt DateTime?
+
+  refundedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  updatedAt DateTime @updatedAt
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("payments")
+}
+
 model SagaLog {
   id String @id @default(uuid())
+
   bookingId String
+
   step SagaStep
-  status SagaStepStatus @default(PENDING)
+
+  status SagaStatus
+
   request Json?
+
   response Json?
+
   error String?
 
   createdAt DateTime @default(now())
+
   updatedAt DateTime @updatedAt
 
-  booking Booking @relation(fields: [bookingId],references:[id])
-  
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
+  @@index([bookingId])
+  @@index([step])
   @@map("saga_logs")
 }
 
 model IdempotencyRecord {
   id String @id @default(uuid())
-  eventKey String @unique
-  response Json?
-  processedAt DateTime @default(now())
 
-  @@index([eventKey])
+  key String @unique
+
+  response Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([key])
   @@map("idempotency_records")
 }

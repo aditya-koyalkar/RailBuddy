@@ -16,5 +16,5 @@ export const config = {
     LOCK_TTL_SECONDS: Number(process.env.LOCK_TTL_SECONDS) || 10 * 60,
     INVENTORY_SERVICE_URL: process.env.INVENTORY_SERVICE_URL || 'http://localhost:8082/api/inventory',
     PAYMENT_SERVICE_URL: process.env.PAYMENT_SERVICE_URL || 'http://localhost:8081/api/payment',
-
+    ADMIN_SERVICE_URL: process.env.ADMIN_SERVICE_URL || 'http://localhost:4003/api/v1/train',
 }

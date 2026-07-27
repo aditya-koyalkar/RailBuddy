@@ -1,11 +1,5 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
-   provider = "prisma-client-js"
+  provider = "prisma-client-js"
 }
 
 datasource db {
@@ -13,104 +7,192 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Station{
+enum CoachType {
+  GENERAL
+  FIRST_CLASS
+}
+
+enum SeatType {
+  LOWER
+  UPPER
+}
+
+enum ScheduleStatus {
+  ACTIVE
+  CANCELLED
+  COMPLETED
+}
+
+model Station {
   id String @id @default(ulid())
-  name String @unique
-  code String @unique
-  city String
+
+  code  String  @unique
+  name  String
+  city  String
   state String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  routeStations RouteStation[]
-  
+  routeStops RouteStop[]
+
+  @@index([city])
   @@index([name])
-  @@index([code])
   @@map("stations")
 }
 
 model Train {
   id String @id @default(uuid())
+
   trainNumber String @unique
-  trainName String
-  coachName String @default("AC")
-  totalSeats Int
+  name        String
+
+  isActive Boolean @default(true)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  seats Seat[]
+  coaches Coach[]
+
   route Route?
+
   schedules Schedule[]
+
+  fares Fare[]
 
   @@map("trains")
 }
 
+model Coach {
+  id String @id @default(uuid())
 
-enum SeatType {
-  LOWER
-  MIDDLE
-  UPPER
-  SIDE_LOWER
-  SIDE_UPPER
+  trainId String
+
+  coachNumber String
+
+  coachType CoachType
+
+  seatCount Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  train Train @relation(fields: [trainId], references: [id], onDelete: Cascade)
+
+  seats Seat[]
+
+  @@unique([trainId, coachNumber])
+  @@index([coachType])
+  @@map("coaches")
 }
 
-model Seat{
+model Seat {
   id String @id @default(uuid())
-  trainId String
+
+  coachId String
+
   seatNumber Int
+
+  seatLabel String
+
   seatType SeatType
-  price Float
 
-  train Train @relation(fields: [trainId],references: [id],onDelete: Cascade)
+  isActive Boolean @default(true)
 
-  @@unique([trainId,seatNumber])
+  coach Coach @relation(fields: [coachId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([coachId, seatNumber])
   @@map("seats")
 }
 
 model Route {
   id String @id @default(uuid())
+
   trainId String @unique
 
-  train Train @relation(fields: [trainId],references: [id],onDelete: Cascade)
+  train Train @relation(fields: [trainId], references: [id], onDelete: Cascade)
 
-  routeStations RouteStation[]
+  stops RouteStop[]
+
+  createdAt DateTime @default(now())
+
+  updatedAt DateTime @updatedAt
 
   @@map("routes")
 }
 
-model RouteStation {
+model RouteStop {
   id String @id @default(uuid())
+
   routeId String
+
   stationId String
-  sequenceNumber Int
-  arrivalTime String?
-  departureTime String?
-  distanceFromOrigin Float @default(0)
 
-  route Route @relation(fields: [routeId],references: [id],onDelete: Cascade)
-  station Station @relation(fields: [stationId],references: [id],onDelete: Cascade)
+  sequence Int
 
-  @@unique([routeId,sequenceNumber])
-  @@unique([routeId,stationId])
-  @@map("route_stations")
+  arrivalDay Int?
+
+  departureDay Int?
+
+  arrivalMinute Int?
+
+  departureMinute Int?
+
+  haltMinutes Int?
+
+  route Route @relation(fields: [routeId], references: [id], onDelete: Cascade)
+
+  station Station @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  @@unique([routeId, sequence])
+  @@unique([routeId, stationId])
+  @@index([stationId])
+  @@map("route_stops")
 }
 
-enum ScheduleStatus {
- ACTIVE
- IN_ACTIVE
-}
-
-model Schedule{
+model Schedule {
   id String @id @default(uuid())
+
   trainId String
+
   departureDate DateTime @db.Date
+
   status ScheduleStatus @default(ACTIVE)
 
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  
-  train Train @relation(fields: [trainId],references: [id],onDelete: Cascade)
 
-  @@unique([trainId,departureDate])
+  updatedAt DateTime @updatedAt
+
+  train Train @relation(fields: [trainId], references: [id], onDelete: Cascade)
+
+  @@unique([trainId, departureDate])
+  @@index([departureDate])
   @@map("schedules")
-  }
+}
+
+model Fare {
+  id String @id @default(uuid())
+
+  trainId String
+
+  fromStationId String
+
+  toStationId String
+
+  coachType CoachType
+
+  fare Decimal @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now())
+
+  updatedAt DateTime @updatedAt
+
+  train Train @relation(fields: [trainId], references: [id], onDelete: Cascade)
+
+  @@index([trainId])
+  @@map("fares")
+}

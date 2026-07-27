@@ -6,7 +6,7 @@ import { CreateScheduleDTO } from "../types/create.schedule.type"
 import { CreateTrainDTO } from "../types/create.train.type"
 import { BadRequestError, ConflictError, NotFoundError } from "../utils/error"
 
-const createTrain = async ({ trainNumber, trainName, coachName, totalSeats, seats }: CreateTrainDTO) => {
+const createTrain = async ({ trainNumber, name, coaches, fares }: CreateTrainDTO) => {
     const existing = await prisma.train.findUnique({
         where: {
             trainNumber
@@ -16,31 +16,60 @@ const createTrain = async ({ trainNumber, trainName, coachName, totalSeats, seat
         throw new ConflictError("Train number already exists")
     }
 
-    const seatNumbers = seats.map((seat) => seat.seatNumber)
-    if (new Set(seatNumbers).size !== seatNumbers.length) {
-        throw new BadRequestError("Duplicate seat numbers found")
+    for (const coach of coaches) {
+        const seatNumbers = coach.seats.map((seat) => seat.seatNumber)
+        if (new Set(seatNumbers).size !== seatNumbers.length) {
+            throw new BadRequestError(`Duplicate seat numbers found in coach ${coach.coachNumber}`)
+        }
+    }
+
+    const trainData: any = {
+        trainNumber,
+        name,
+        coaches: {
+            create: coaches.map((coach) => ({
+                coachNumber: coach.coachNumber,
+                coachType: coach.coachType,
+                seatCount: coach.seats.length,
+                seats: {
+                    create: coach.seats.map((seat) => ({
+                        seatNumber: seat.seatNumber,
+                        seatLabel: seat.seatLabel,
+                        seatType: seat.seatType,
+                        isActive: true
+                    }))
+                }
+            }))
+        }
+    }
+
+    if (fares && fares.length > 0) {
+        trainData.fares = {
+            create: fares.map((fare) => ({
+                fromStationId: fare.fromStationId,
+                toStationId: fare.toStationId,
+                coachType: fare.coachType,
+                fare: fare.fare
+            }))
+        }
     }
 
     const train = await prisma.train.create({
-        data: {
-            trainNumber,
-            trainName,
-            coachName,
-            totalSeats,
-            seats: {
-                create: seats.map((seat) => ({
-                    seatNumber: seat.seatNumber,
-                    seatType: seat.seatType,
-                    price: seat.price
-                }))
-            }
-        },
+        data: trainData,
         include: {
-            seats: {
+            coaches: {
+                include: {
+                    seats: {
+                        orderBy: {
+                            seatNumber: 'asc'
+                        }
+                    }
+                },
                 orderBy: {
-                    seatNumber: 'asc'
+                    coachNumber: 'asc'
                 }
-            }
+            },
+            fares: true
         }
     })
 
@@ -54,7 +83,7 @@ const createTrain = async ({ trainNumber, trainName, coachName, totalSeats, seat
 
 }
 
-const createRoute = async (trainId: string, routeStations: CreateRouteDTO['routeStations']) => {
+const createRoute = async (trainId: string, stops: CreateRouteDTO['stops']) => {
     const existing = await prisma.train.findUnique({
         where: {
             id: trainId
@@ -73,7 +102,7 @@ const createRoute = async (trainId: string, routeStations: CreateRouteDTO['route
         throw new ConflictError("Route already exists")
     }
 
-    const stationIds = routeStations.map((routeStation) => routeStation.stationId)
+    const stationIds = stops.map((stop) => stop.stationId)
     const existingStations = await prisma.station.findMany({
         where: {
             id: {
@@ -85,45 +114,56 @@ const createRoute = async (trainId: string, routeStations: CreateRouteDTO['route
         throw new NotFoundError("One or more stations not found")
     }
 
-    const sorted = [...routeStations].sort((a, b) => a.sequenceNumber - b.sequenceNumber)
+    const sorted = [...stops].sort((a, b) => a.sequence - b.sequence)
 
     for (let i = 0; i < sorted.length; i++) {
-        if (sorted[i].sequenceNumber !== i + 1) {
-            throw new BadRequestError("Sequence number are not in order")
+        if (sorted[i].sequence !== i + 1) {
+            throw new BadRequestError("Sequence numbers are not in order")
         }
     }
 
     const route = await prisma.route.create({
         data: {
             trainId,
-            routeStations: {
-                create: routeStations.map((routeStation) => ({
-                    stationId: routeStation.stationId,
-                    arrivalTime: routeStation.arrivalTime,
-                    departureTime: routeStation.departureTime,
-                    sequenceNumber: routeStation.sequenceNumber,
-                    distanceFromOrigin: routeStation.distanceFromOrigin
+            stops: {
+                create: stops.map((stop) => ({
+                    sequence: stop.sequence,
+                    arrivalDay: stop.arrivalDay ?? null,
+                    departureDay: stop.departureDay ?? null,
+                    arrivalMinute: stop.arrivalMinute ?? null,
+                    departureMinute: stop.departureMinute ?? null,
+                    haltMinutes: stop.haltMinutes ?? null,
+                    station: {
+                        connect: { id: stop.stationId }
+                    }
                 }))
             }
         },
         include: {
-            routeStations: {
+            stops: {
                 include: {
                     station: true
                 },
                 orderBy: {
-                    sequenceNumber: 'asc'
+                    sequence: 'asc'
                 }
             }
         }
     })
 
-    const trainWithSeats = await prisma.train.findUnique({
+    const trainWithCoachesAndSeats = await prisma.train.findUnique({
         where: { id: trainId },
         include: {
-            seats: {
+            coaches: {
+                include: {
+                    seats: {
+                        orderBy: {
+                            seatNumber: 'asc'
+                        }
+                    }
+                },
                 orderBy: {
-                    seatNumber: 'asc'
+                    coachNumber: 'asc'
                 }
             }
         }
@@ -131,7 +171,7 @@ const createRoute = async (trainId: string, routeStations: CreateRouteDTO['route
 
     logger.info("Route created successfully", { id: route.id, trainId: route.trainId })
 
-    await adminProducer.publishRouteCreated({ ...route, train: trainWithSeats! }).catch((error) => {
+    await adminProducer.publishRouteCreated({ ...route, train: trainWithCoachesAndSeats! }).catch((error) => {
         logger.error('Failed to publish route create event', { error: error.message })
     })
 
@@ -142,14 +182,20 @@ const getTrainById = async (trainId: string) => {
     const train = await prisma.train.findUnique({
         where: { id: trainId },
         include: {
-            seats: {
-                orderBy: { seatNumber: 'asc' }
+            coaches: {
+                include: {
+                    seats: {
+                        orderBy: { seatNumber: 'asc' }
+                    }
+                },
+                orderBy: { coachNumber: 'asc' }
             },
+            fares: true,
             route: {
                 include: {
-                    routeStations: {
+                    stops: {
                         include: { station: true },
-                        orderBy: { sequenceNumber: 'asc' }
+                        orderBy: { sequence: 'asc' }
                     }
                 }
             }
@@ -169,24 +215,29 @@ const createSchedule = async ({ trainId, departureDate, status }: CreateSchedule
         include: {
             route: {
                 include: {
-                    routeStations: {
+                    stops: {
                         include: {
                             station: true
                         },
                         orderBy: {
-                            sequenceNumber: 'asc'
+                            sequence: 'asc'
                         }
                     }
                 }
             },
-            seats: true
+            coaches: {
+                include: {
+                    seats: true
+                }
+            }
         }
     })
     if (!train) {
         throw new NotFoundError("Train not found")
     }
 
-    if (train.seats.length === 0) {
+    const totalSeatsCount = train.coaches.reduce((acc, coach) => acc + coach.seats.length, 0)
+    if (totalSeatsCount === 0) {
         throw new BadRequestError("Train has no seats")
     }
 
@@ -230,3 +281,5 @@ const createSchedule = async ({ trainId, departureDate, status }: CreateSchedule
 }
 
 export default { createTrain, createRoute, getTrainById, createSchedule }
+
+
