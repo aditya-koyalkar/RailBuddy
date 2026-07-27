@@ -8,9 +8,11 @@ const client = axios.create({
 })
 
 const inventoryClient = {
-    async getAvailability(scheduleId: string) {
+    async getAvailability(scheduleId: string, fromSeq: number, toSeq: number) {
         return withRetry(async () => {
-            const { data } = await client.get(`/schedules/${scheduleId}/availability`);
+            const { data } = await client.get(`/schedules/${scheduleId}/availability`, {
+                params: { fromSeq, toSeq }
+            });
             return data.data;
         })
     },

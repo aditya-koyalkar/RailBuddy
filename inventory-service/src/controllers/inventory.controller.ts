@@ -5,7 +5,17 @@ import inventoryService from "../services/inventory.service.js";
 
 export const getAvailability = asyncHandler(async (req: Request, res: Response) => {
     const scheduleId = req.params.scheduleId as string;
-    const availability = await inventoryService.getAvailability(scheduleId)
+    const { fromSeq, toSeq } = req.query;
+    
+    if (fromSeq === undefined || toSeq === undefined) {
+        throw new BadRequestError("fromSeq and toSeq query parameters are required");
+    }
+
+    const availability = await inventoryService.getAvailability(
+        scheduleId,
+        Number(fromSeq),
+        Number(toSeq)
+    );
     return res.status(200).json({
         success: true,
         data: availability

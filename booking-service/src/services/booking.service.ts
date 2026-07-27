@@ -50,7 +50,7 @@ const createBooking = async (
         return cached;
     }
 
-    const availability = await inventoryClient.getAvailability(scheduleId)
+    const availability = await inventoryClient.getAvailability(scheduleId, fromSeq, toSeq)
 
     if (availability.status !== 'ACTIVE') {
         throw new BadRequestError('Schedule is not active');
