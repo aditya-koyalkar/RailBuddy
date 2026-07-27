@@ -1,11 +1,42 @@
+import { config } from "../config/index.js";
 import { logger } from "../config/logger.js";
 import { prisma } from "../config/prisma.js";
 import inventoryProducer from "../kafka/producer/inventory.producer.js";
-import { NotFoundError } from "../utils/error.js";
+import { BadRequestError, ConflictError, NotFoundError } from "../utils/error.js";
+
+const getAvailabilityInternal = async (tx: any, scheduleId: string, schedule: any) => {
+    const now = new Date();
+
+    const activeLocksCount = await tx.seatSegmentReservation.count({
+        where: {
+            scheduleId,
+            status: 'LOCKED',
+            OR: [
+                { expiresAt: null },
+                { expiresAt: { gt: now } }
+            ]
+        }
+    });
+
+    const bookedCount = await tx.seatSegmentReservation.count({
+        where: {
+            scheduleId,
+            status: 'BOOKED'
+        }
+    });
+
+    const availableCount = Math.max(0, schedule.totalSeats - (activeLocksCount + bookedCount));
+
+    return {
+        available: availableCount,
+        locked: activeLocksCount,
+        booked: bookedCount
+    };
+};
 
 const initializeInventory = async (eventData: any) => {
     const payload = eventData.data || eventData;
-    const { scheduleId, trainId, trainNumber, trainName, departureDate, seats } = payload;
+    const { scheduleId, trainId, departureDate, seats } = payload;
 
     if (!scheduleId || !seats) {
         logger.warn(`Inventory initialization failed: Missing scheduleId or seats`, { scheduleId, hasSeats: !!seats });
@@ -31,24 +62,23 @@ const initializeInventory = async (eventData: any) => {
             data: {
                 scheduleId,
                 trainId,
-                trainNumber,
-                trainName,
-                departureDate,
+                departureDate: new Date(departureDate),
                 totalSeats,
-                available: totalSeats,
-                locked: 0,
-                booked: 0,
                 status: 'ACTIVE'
             }
         })
 
         const seatData = seats.map((seat: any) => ({
             scheduleInventoryId: scheduleInventory.id,
-            status: 'AVAILABLE',
             scheduleId,
+            seatId: seat.seatId,
+            coachId: seat.coachId,
+            coachNumber: seat.coachNumber,
+            coachType: seat.coachType,
             seatNumber: seat.seatNumber,
+            seatLabel: seat.seatLabel,
             seatType: seat.seatType,
-            price: seat.price
+            isActive: true
         }));
 
         await tx.seatInventory.createMany({
@@ -61,14 +91,16 @@ const initializeInventory = async (eventData: any) => {
                 stationId: routeStop.stationId,
                 stationName: routeStop.stationName,
                 stationCode: routeStop.stationCode,
-                sequenceNumber: routeStop.sequenceNumber
+                sequence: routeStop.sequence,
+                arrivalDay: routeStop.arrivalDay ?? null,
+                departureDay: routeStop.departureDay ?? null,
+                arrivalMinute: routeStop.arrivalMinute ?? null,
+                departureMinute: routeStop.departureMinute ?? null
             }));
-
 
             await tx.routeStop.createMany({
                 data: routeStopData
             });
-
         }
 
         await tx.idempotencyRecord.create({
@@ -108,28 +140,25 @@ const cancelSheduleInventory = async (eventData: any) => {
     }
 
     await prisma.$transaction(async (tx) => {
-
         await tx.scheduleInventory.update({
             where: {
                 scheduleId: scheduleId
             },
             data: {
                 status: 'CANCELLED',
-                available: 0,
-                locked: 0,
-                booked: 0,
                 version: {
                     increment: 1
                 }
             }
         })
 
-        await tx.seatInventory.updateMany({
+        await tx.seatSegmentReservation.updateMany({
             where: {
-                scheduleId: scheduleId
+                scheduleId,
+                status: { in: ['LOCKED', 'BOOKED'] }
             },
             data: {
-                status: "CANCELLED"
+                status: 'CANCELLED'
             }
         })
 
@@ -142,37 +171,398 @@ const cancelSheduleInventory = async (eventData: any) => {
 
     logger.info(`Inventory cancelled successfully for schedule ${scheduleId}`);
 
+    const schedule = await prisma.scheduleInventory.findUnique({
+        where: { scheduleId }
+    })
+
     try {
-        await inventoryProducer.publishSeatAvailabilityUpdated(scheduleId, trainId, 0, 0, 0);
+        await inventoryProducer.publishSeatAvailabilityUpdated(scheduleId, trainId, schedule?.totalSeats || 0, 0, 0);
     }
     catch (e) {
         logger.error(`Failed to publish seat availability update for schedule ${scheduleId}: ${e}`);
     }
-
 }
 
 export const getAvailability = async (scheduleId: string) => {
-    const availability = await prisma.scheduleInventory.findUnique({
+    const schedule = await prisma.scheduleInventory.findUnique({
         where: { scheduleId }
     });
 
-    if (!availability) {
+    if (!schedule) {
         throw new NotFoundError("Schedule inventory not found");
     }
+
+    const now = new Date();
+
+    const activeLocksCount = await prisma.seatSegmentReservation.count({
+        where: {
+            scheduleId,
+            status: 'LOCKED',
+            OR: [
+                { expiresAt: null },
+                { expiresAt: { gt: now } }
+            ]
+        }
+    });
+
+    const bookedCount = await prisma.seatSegmentReservation.count({
+        where: {
+            scheduleId,
+            status: 'BOOKED'
+        }
+    });
+
+    const availableCount = Math.max(0, schedule.totalSeats - (activeLocksCount + bookedCount));
+
     return {
-        scheduleId: availability.scheduleId,
-        trainId: availability.trainId,
-        trainNumber: availability.trainNumber,
-        trainName: availability.trainName,
-        departureDate: availability.departureDate,
-        totalSeats: availability.totalSeats,
-        available: availability.available,
-        locked: availability.locked,
-        booked: availability.booked,
-        status: availability.status
+        scheduleId: schedule.scheduleId,
+        trainId: schedule.trainId,
+        departureDate: schedule.departureDate,
+        totalSeats: schedule.totalSeats,
+        available: availableCount,
+        locked: activeLocksCount,
+        booked: bookedCount,
+        status: schedule.status
     }
 }
 
+export const lockSeats = async (
+    scheduleId: string,
+    seatIds: string[],
+    userId: string,
+    ttlSeconds: number,
+    fromSeq: number,
+    toSeq: number,
+    bookingId?: string
+) => {
+    const ttl = Math.min(Math.max(ttlSeconds || config.LOCK_TTL_SECONDS, 60), 600);
+    const lockExpiresAt = new Date(Date.now() + ttl * 1000);
 
+    const fromSeqNum = Number(fromSeq);
+    const toSeqNum = Number(toSeq);
 
-export default { initializeInventory, cancelSheduleInventory, getAvailability }
+    if (!scheduleId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0 || !userId) {
+        throw new BadRequestError("Missing required fields for locking seats");
+    }
+
+    return await prisma.$transaction(async (tx) => {
+        const schedule = await tx.scheduleInventory.findUnique({
+            where: { scheduleId }
+        });
+
+        if (!schedule) {
+            throw new NotFoundError("Schedule inventory not found");
+        }
+        if (schedule.status !== "ACTIVE") {
+            throw new BadRequestError("Schedule is not active");
+        }
+
+        const seatInventories = await tx.seatInventory.findMany({
+            where: {
+                scheduleId,
+                seatId: { in: seatIds }
+            }
+        });
+
+        if (seatInventories.length !== seatIds.length) {
+            throw new NotFoundError("One or more seats not found for this schedule");
+        }
+
+        const fromRouteStop = await tx.routeStop.findUnique({
+            where: { scheduleId_sequence: { scheduleId, sequence: fromSeqNum } }
+        });
+        const toRouteStop = await tx.routeStop.findUnique({
+            where: { scheduleId_sequence: { scheduleId, sequence: toSeqNum } }
+        });
+
+        if (!fromRouteStop || !toRouteStop) {
+            throw new BadRequestError("Invalid from/to sequences for this schedule route");
+        }
+
+        const activeReservations = await tx.seatSegmentReservation.findMany({
+            where: {
+                scheduleId,
+                seatId: { in: seatIds },
+                status: { in: ["LOCKED", "BOOKED"] }
+            }
+        });
+
+        const now = new Date();
+        const activeLocks = activeReservations.filter(
+            (res) => res.status === "BOOKED" || !res.expiresAt || res.expiresAt > now
+        );
+
+        for (const seatId of seatIds) {
+            const seatLocks = activeLocks.filter((res) => res.seatId === seatId);
+            const hasOverlap = seatLocks.some(
+                (lock) => fromSeqNum < lock.toSequence && toSeqNum > lock.fromSequence
+            );
+            if (hasOverlap) {
+                throw new ConflictError(`Seat ${seatId} is already locked/booked for overlapping segment`);
+            }
+        }
+
+        const resolvedBookingId = bookingId || `temp-lock-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+        const lockData = seatInventories.map((si) => ({
+            scheduleInventoryId: schedule.id,
+            seatInventoryId: si.id,
+            bookingId: resolvedBookingId,
+            scheduleId,
+            seatId: si.seatId,
+            fromStationId: fromRouteStop.stationId,
+            toStationId: toRouteStop.stationId,
+            fromSequence: fromSeqNum,
+            toSequence: toSeqNum,
+            status: "LOCKED" as const,
+            lockedBy: userId,
+            expiresAt: lockExpiresAt
+        }));
+
+        await tx.seatSegmentReservation.createMany({
+            data: lockData
+        });
+
+        await tx.scheduleInventory.update({
+            where: { scheduleId },
+            data: {
+                version: { increment: 1 }
+            }
+        });
+
+        const availability = await getAvailabilityInternal(tx, scheduleId, schedule);
+        await inventoryProducer.publishSeatAvailabilityUpdated(
+            scheduleId,
+            schedule.trainId,
+            schedule.totalSeats,
+            availability.locked,
+            availability.booked
+        ).catch((err) => logger.error(`Failed to publish seat availability: ${err.message}`));
+
+        return {
+            bookingId: resolvedBookingId,
+            expiresAt: lockExpiresAt
+        };
+    });
+};
+
+export const unlockSeats = async (
+    scheduleId: string,
+    seatIds: string[],
+    userId: string,
+    fromSeq: number,
+    toSeq: number
+) => {
+    const fromSeqNum = Number(fromSeq);
+    const toSeqNum = Number(toSeq);
+
+    if (!scheduleId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0 || !userId) {
+        throw new BadRequestError("Missing required fields for releasing seats");
+    }
+
+    return await prisma.$transaction(async (tx) => {
+        const schedule = await tx.scheduleInventory.findUnique({
+            where: { scheduleId }
+        });
+
+        if (!schedule) {
+            throw new NotFoundError("Schedule inventory not found");
+        }
+
+        const deleteResult = await tx.seatSegmentReservation.deleteMany({
+            where: {
+                scheduleId,
+                seatId: { in: seatIds },
+                fromSequence: fromSeqNum,
+                toSequence: toSeqNum,
+                lockedBy: userId,
+                status: "LOCKED"
+            }
+        });
+
+        if (deleteResult.count > 0) {
+            await tx.scheduleInventory.update({
+                where: { scheduleId },
+                data: {
+                    version: { increment: 1 }
+                }
+            });
+        }
+
+        const availability = await getAvailabilityInternal(tx, scheduleId, schedule);
+        await inventoryProducer.publishSeatAvailabilityUpdated(
+            scheduleId,
+            schedule.trainId,
+            schedule.totalSeats,
+            availability.locked,
+            availability.booked
+        ).catch((err) => logger.error(`Failed to publish seat availability: ${err.message}`));
+
+        return { count: deleteResult.count };
+    });
+};
+
+export const confirmSeats = async (scheduleId: string, seatIds: string[], bookingId: string) => {
+    if (!scheduleId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0 || !bookingId) {
+        throw new BadRequestError("Missing required fields for confirming seats");
+    }
+
+    return await prisma.$transaction(async (tx) => {
+        const schedule = await tx.scheduleInventory.findUnique({
+            where: { scheduleId }
+        });
+
+        if (!schedule) {
+            throw new NotFoundError("Schedule inventory not found");
+        }
+
+        const updateResult = await tx.seatSegmentReservation.updateMany({
+            where: {
+                scheduleId,
+                seatId: { in: seatIds },
+                bookingId,
+                status: "LOCKED"
+            },
+            data: {
+                status: "BOOKED"
+            }
+        });
+
+        if (updateResult.count > 0) {
+            await tx.scheduleInventory.update({
+                where: { scheduleId },
+                data: {
+                    version: { increment: 1 }
+                }
+            });
+        }
+
+        const availability = await getAvailabilityInternal(tx, scheduleId, schedule);
+        await inventoryProducer.publishSeatAvailabilityUpdated(
+            scheduleId,
+            schedule.trainId,
+            schedule.totalSeats,
+            availability.locked,
+            availability.booked
+        ).catch((err) => logger.error(`Failed to publish seat availability: ${err.message}`));
+
+        return { count: updateResult.count };
+    });
+};
+
+export const cancelBooking = async (scheduleId: string, seatIds: string[], bookingId: string) => {
+    if (!scheduleId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0 || !bookingId) {
+        throw new BadRequestError("Missing required fields for cancelling booking");
+    }
+
+    return await prisma.$transaction(async (tx) => {
+        const schedule = await tx.scheduleInventory.findUnique({
+            where: { scheduleId }
+        });
+
+        if (!schedule) {
+            throw new NotFoundError("Schedule inventory not found");
+        }
+
+        const updateResult = await tx.seatSegmentReservation.updateMany({
+            where: {
+                scheduleId,
+                seatId: { in: seatIds },
+                bookingId,
+                status: "BOOKED"
+            },
+            data: {
+                status: "CANCELLED"
+            }
+        });
+
+        if (updateResult.count > 0) {
+            await tx.scheduleInventory.update({
+                where: { scheduleId },
+                data: {
+                    version: { increment: 1 }
+                }
+            });
+        }
+
+        const availability = await getAvailabilityInternal(tx, scheduleId, schedule);
+        await inventoryProducer.publishSeatAvailabilityUpdated(
+            scheduleId,
+            schedule.trainId,
+            schedule.totalSeats,
+            availability.locked,
+            availability.booked
+        ).catch((err) => logger.error(`Failed to publish seat availability: ${err.message}`));
+
+        return { count: updateResult.count };
+    });
+};
+
+export const getSeats = async (
+    scheduleId: string,
+    filters: {
+        status?: string | undefined;
+        seatType?: string | undefined;
+        fromSeq?: number | undefined;
+        toSeq?: number | undefined;
+    }
+) => {
+    const { status, seatType, fromSeq, toSeq } = filters;
+
+    const whereClause: any = { scheduleId };
+    if (seatType) {
+        whereClause.seatType = seatType;
+    }
+
+    const seats = await prisma.seatInventory.findMany({
+        where: whereClause
+    });
+
+    const reservations = await prisma.seatSegmentReservation.findMany({
+        where: {
+            scheduleId,
+            status: { in: ["LOCKED", "BOOKED"] }
+        }
+    });
+
+    const now = new Date();
+    const activeReservations = reservations.filter(
+        res => res.status === "BOOKED" || !res.expiresAt || res.expiresAt > now
+    );
+
+    let resultSeats = seats.map(seat => {
+        const seatReservations = activeReservations.filter(res => res.seatId === seat.seatId);
+        
+        let segmentStatus = "AVAILABLE";
+        if (fromSeq !== undefined && toSeq !== undefined) {
+            const fromSeqNum = Number(fromSeq);
+            const toSeqNum = Number(toSeq);
+            const isReserved = seatReservations.some(
+                lock => lock.fromSequence < toSeqNum && lock.toSequence > fromSeqNum
+            );
+            if (isReserved) {
+                const overlappingRes = seatReservations.find(
+                    lock => lock.fromSequence < toSeqNum && lock.toSequence > fromSeqNum
+                );
+                segmentStatus = overlappingRes?.status || "AVAILABLE";
+            }
+        } else {
+            if (seatReservations.length > 0) {
+                segmentStatus = seatReservations[0].status;
+            }
+        }
+
+        return {
+            ...seat,
+            segmentStatus
+        };
+    });
+
+    if (status) {
+        resultSeats = resultSeats.filter(seat => seat.segmentStatus === status);
+    }
+
+    return resultSeats;
+};
+
+export default { initializeInventory, cancelSheduleInventory, getAvailability, lockSeats, unlockSeats, confirmSeats, cancelBooking, getSeats }
