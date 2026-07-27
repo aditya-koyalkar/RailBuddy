@@ -51,7 +51,7 @@ model ScheduleInventory {
 
   updatedAt DateTime @updatedAt
 
-  seats SeatInventory[]
+  seats ScheduleSeat[]
 
   reservations SeatSegmentReservation[]
 
@@ -60,7 +60,7 @@ model ScheduleInventory {
   @@map("schedule_inventory")
 }
 
-model SeatInventory {
+model ScheduleSeat {
   id String @id @default(uuid())
 
   scheduleInventoryId String
@@ -95,7 +95,7 @@ model SeatInventory {
   @@index([scheduleId])
   @@index([coachNumber])
   @@index([coachType])
-  @@map("seat_inventory")
+  @@map("schedule_seats")
 }
 
 model RouteStop {
@@ -130,7 +130,7 @@ model SeatSegmentReservation {
 
   scheduleInventoryId String
 
-  seatInventoryId String
+  scheduleSeatId String
 
   bookingId String
 
@@ -162,7 +162,7 @@ model SeatSegmentReservation {
 
   scheduleInventory ScheduleInventory @relation(fields: [scheduleInventoryId], references: [id], onDelete: Cascade)
 
-  seatInventory SeatInventory @relation(fields: [seatInventoryId], references: [id], onDelete: Cascade)
+  scheduleSeat ScheduleSeat @relation(fields: [scheduleSeatId], references: [id], onDelete: Cascade)
 
   @@index([scheduleId, seatId])
   @@index([scheduleId, status])

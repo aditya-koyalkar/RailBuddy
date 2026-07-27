@@ -101,7 +101,7 @@ const initializeInventory = async (eventData: any) => {
             isActive: true
         }));
 
-        await tx.seatInventory.createMany({
+        await tx.scheduleSeat.createMany({
             data: seatData
         })
 
@@ -258,10 +258,10 @@ export const lockSeats = async (
                 throw new BadRequestError("Schedule is not active");
             }
 
-            // Though seat inventory is not used for storing availability it can be used for
-            const seatInventories = await tx.$queryRaw`SELECT * FROM "SeatInventory" WHERE "scheduleId" = ${scheduleId} AND "seatId" IN (${Prisma.join(seatIds)}) FOR UPDATE NOWAIT` as any[];
+            // Though schedule seats table is not used for storing availability it can be used for seat verification/locking
+            const scheduleSeats = await tx.$queryRaw`SELECT * FROM "schedule_seats" WHERE "scheduleId" = ${scheduleId} AND "seatId" IN (${Prisma.join(seatIds)}) FOR UPDATE NOWAIT` as any[];
 
-            if (seatInventories.length !== seatIds.length) {
+            if (scheduleSeats.length !== seatIds.length) {
                 throw new NotFoundError("One or more seats not found for this schedule");
             }
 
@@ -310,9 +310,9 @@ export const lockSeats = async (
                 }
             });
 
-            const lockData = seatInventories.map((si) => ({
+            const lockData = scheduleSeats.map((si: any) => ({
                 scheduleInventoryId: schedule.id,
-                seatInventoryId: si.id,
+                scheduleSeatId: si.id,
                 bookingId: resolvedBookingId,
                 scheduleId,
                 seatId: si.seatId,
@@ -539,7 +539,7 @@ export const getSeats = async (
         whereClause.seatType = seatType;
     }
 
-    const seats = await prisma.seatInventory.findMany({
+    const seats = await prisma.scheduleSeat.findMany({
         where: whereClause
     });
 

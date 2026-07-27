@@ -30,7 +30,7 @@ CREATE TABLE "schedule_inventory" (
 );
 
 -- CreateTable
-CREATE TABLE "seat_inventory" (
+CREATE TABLE "schedule_seats" (
     "id" TEXT NOT NULL,
     "scheduleInventoryId" TEXT NOT NULL,
     "scheduleId" TEXT NOT NULL,
@@ -45,7 +45,7 @@ CREATE TABLE "seat_inventory" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "seat_inventory_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "schedule_seats_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -68,7 +68,7 @@ CREATE TABLE "route_stops" (
 CREATE TABLE "seat_segment_reservations" (
     "id" TEXT NOT NULL,
     "scheduleInventoryId" TEXT NOT NULL,
-    "seatInventoryId" TEXT NOT NULL,
+    "scheduleSeatId" TEXT NOT NULL,
     "bookingId" TEXT NOT NULL,
     "scheduleId" TEXT NOT NULL,
     "seatId" TEXT NOT NULL,
@@ -117,16 +117,16 @@ CREATE INDEX "schedule_inventory_trainId_idx" ON "schedule_inventory"("trainId")
 CREATE INDEX "schedule_inventory_departureDate_idx" ON "schedule_inventory"("departureDate");
 
 -- CreateIndex
-CREATE INDEX "seat_inventory_scheduleId_idx" ON "seat_inventory"("scheduleId");
+CREATE INDEX "schedule_seats_scheduleId_idx" ON "schedule_seats"("scheduleId");
 
 -- CreateIndex
-CREATE INDEX "seat_inventory_coachNumber_idx" ON "seat_inventory"("coachNumber");
+CREATE INDEX "schedule_seats_coachNumber_idx" ON "schedule_seats"("coachNumber");
 
 -- CreateIndex
-CREATE INDEX "seat_inventory_coachType_idx" ON "seat_inventory"("coachType");
+CREATE INDEX "schedule_seats_coachType_idx" ON "schedule_seats"("coachType");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "seat_inventory_scheduleId_seatId_key" ON "seat_inventory"("scheduleId", "seatId");
+CREATE UNIQUE INDEX "schedule_seats_scheduleId_seatId_key" ON "schedule_seats"("scheduleId", "seatId");
 
 -- CreateIndex
 CREATE INDEX "route_stops_scheduleId_idx" ON "route_stops"("scheduleId");
@@ -159,10 +159,10 @@ CREATE INDEX "inventory_outbox_published_idx" ON "inventory_outbox"("published")
 CREATE INDEX "inventory_outbox_aggregateType_aggregateId_idx" ON "inventory_outbox"("aggregateType", "aggregateId");
 
 -- AddForeignKey
-ALTER TABLE "seat_inventory" ADD CONSTRAINT "seat_inventory_scheduleInventoryId_fkey" FOREIGN KEY ("scheduleInventoryId") REFERENCES "schedule_inventory"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "schedule_seats" ADD CONSTRAINT "schedule_seats_scheduleInventoryId_fkey" FOREIGN KEY ("scheduleInventoryId") REFERENCES "schedule_inventory"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "seat_segment_reservations" ADD CONSTRAINT "seat_segment_reservations_scheduleInventoryId_fkey" FOREIGN KEY ("scheduleInventoryId") REFERENCES "schedule_inventory"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "seat_segment_reservations" ADD CONSTRAINT "seat_segment_reservations_seatInventoryId_fkey" FOREIGN KEY ("seatInventoryId") REFERENCES "seat_inventory"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "seat_segment_reservations" ADD CONSTRAINT "seat_segment_reservations_scheduleSeatId_fkey" FOREIGN KEY ("scheduleSeatId") REFERENCES "schedule_seats"("id") ON DELETE CASCADE ON UPDATE CASCADE;
