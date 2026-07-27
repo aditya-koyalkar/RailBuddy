@@ -7,7 +7,6 @@ import { BadRequestError, ConflictError, NotFoundError } from "../utils/error.js
 import { retryTransaction } from "../utils/retryTransaction.js";
 
 const getAvailabilityInternal = async (
-    tx: any,
     scheduleId: string,
     schedule: any,
     fromSeq: number,
@@ -17,7 +16,7 @@ const getAvailabilityInternal = async (
     const fromSeqNum = Number(fromSeq);
     const toSeqNum = Number(toSeq);
 
-    const activeLocks = await tx.seatSegmentReservation.findMany({
+    const activeLocks = await prisma.seatSegmentReservation.findMany({
         where: {
             scheduleId,
             status: 'LOCKED',
@@ -212,7 +211,7 @@ export const getAvailability = async (scheduleId: string, fromSeq: number, toSeq
         throw new NotFoundError("Schedule inventory not found");
     }
 
-    const counts = await getAvailabilityInternal(prisma, scheduleId, schedule, fromSeq, toSeq);
+    const counts = await getAvailabilityInternal(scheduleId, schedule, fromSeq, toSeq);
 
     return {
         scheduleId: schedule.scheduleId,
@@ -245,7 +244,7 @@ export const lockSeats = async (
         throw new BadRequestError("Missing required fields for locking seats");
     }
 
-    return retryTransaction(async () => {
+    const result = await retryTransaction(async () => {
         await prisma.$transaction(async (tx) => {
             const schedule = await tx.scheduleInventory.findUnique({
                 where: { scheduleId }
@@ -320,22 +319,46 @@ export const lockSeats = async (
                 data: lockData
             });
 
-            const availability = await getAvailabilityInternal(tx, scheduleId, schedule, fromSeqNum, toSeqNum);
-            await inventoryProducer.publishSeatAvailabilityUpdated(
-                scheduleId,
-                schedule.trainId,
-                schedule.totalSeats,
-                availability.locked,
-                availability.booked
-            ).catch((err) => logger.error(`Failed to publish seat availability: ${err.message}`));
+            await tx.inventoryOutbox.create({
+                data: {
+                    aggregateType: "ScheduleInventory",
+                    aggregateId: scheduleId,
+                    eventType: "SeatAvailabilityChanged",
+                    payload: {
+                        scheduleId,
+                        affectedSeatIds: seatIds
+                    }
+                }
+            });
 
             return {
                 bookingId: resolvedBookingId,
-                expiresAt: lockExpiresAt
+                expiresAt: lockExpiresAt,
+                schedule
             };
         });
-    })
+    });
 
+    // we will do this using Outbox pattern
+
+    // try {
+    //     const availability = await getAvailabilityInternal(scheduleId, result.schedule, fromSeqNum, toSeqNum)
+
+    //     await inventoryProducer.publishSeatAvailabilityUpdated(
+    //         scheduleId,
+    //         result.schedule.trainId,
+    //         result.schedule.totalSeats,
+    //         availability.locked,
+    //         availability.booked
+    //     )
+    // } catch (err: any) {
+    //     logger.error(`Failed to publish seat availability: ${err.message}`);
+    // };
+
+    return {
+        bookingId: result.bookingId,
+        expiresAt: result.expiresAt
+    };
 };
 
 export const unlockSeats = async (
@@ -352,7 +375,7 @@ export const unlockSeats = async (
         throw new BadRequestError("Missing required fields for releasing seats");
     }
 
-    return await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
         const schedule = await tx.scheduleInventory.findUnique({
             where: { scheduleId }
         });
@@ -381,17 +404,24 @@ export const unlockSeats = async (
             });
         }
 
-        const availability = await getAvailabilityInternal(tx, scheduleId, schedule, fromSeqNum, toSeqNum);
-        await inventoryProducer.publishSeatAvailabilityUpdated(
-            scheduleId,
-            schedule.trainId,
-            schedule.totalSeats,
-            availability.locked,
-            availability.booked
-        ).catch((err) => logger.error(`Failed to publish seat availability: ${err.message}`));
-
-        return { count: deleteResult.count };
+        return { count: deleteResult.count, schedule };
     });
+
+    if (result.count > 0) {
+        getAvailabilityInternal(scheduleId, result.schedule, fromSeqNum, toSeqNum)
+            .then((availability) =>
+                inventoryProducer.publishSeatAvailabilityUpdated(
+                    scheduleId,
+                    result.schedule.trainId,
+                    result.schedule.totalSeats,
+                    availability.locked,
+                    availability.booked
+                )
+            )
+            .catch((err) => logger.error(`Failed to publish seat availability: ${err.message}`));
+    }
+
+    return { count: result.count };
 };
 
 export const confirmSeats = async (scheduleId: string, seatIds: string[], bookingId: string) => {
@@ -399,7 +429,7 @@ export const confirmSeats = async (scheduleId: string, seatIds: string[], bookin
         throw new BadRequestError("Missing required fields for confirming seats");
     }
 
-    return await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
         const schedule = await tx.scheduleInventory.findUnique({
             where: { scheduleId }
         });
@@ -441,17 +471,27 @@ export const confirmSeats = async (scheduleId: string, seatIds: string[], bookin
             });
         }
 
-        const availability = await getAvailabilityInternal(tx, scheduleId, schedule, reservation.fromSequence, reservation.toSequence);
-        await inventoryProducer.publishSeatAvailabilityUpdated(
-            scheduleId,
-            schedule.trainId,
-            schedule.totalSeats,
-            availability.locked,
-            availability.booked
-        ).catch((err) => logger.error(`Failed to publish seat availability: ${err.message}`));
-
-        return { count: updateResult.count };
+        return {
+            count: updateResult.count,
+            schedule,
+            fromSequence: reservation.fromSequence,
+            toSequence: reservation.toSequence
+        };
     });
+
+    getAvailabilityInternal(scheduleId, result.schedule, result.fromSequence, result.toSequence)
+        .then((availability) =>
+            inventoryProducer.publishSeatAvailabilityUpdated(
+                scheduleId,
+                result.schedule.trainId,
+                result.schedule.totalSeats,
+                availability.locked,
+                availability.booked
+            )
+        )
+        .catch((err) => logger.error(`Failed to publish seat availability: ${err.message}`));
+
+    return { count: result.count };
 };
 
 export const cancelBooking = async (scheduleId: string, seatIds: string[], bookingId: string) => {
@@ -459,7 +499,7 @@ export const cancelBooking = async (scheduleId: string, seatIds: string[], booki
         throw new BadRequestError("Missing required fields for cancelling booking");
     }
 
-    return await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
         const schedule = await tx.scheduleInventory.findUnique({
             where: { scheduleId }
         });
@@ -501,17 +541,27 @@ export const cancelBooking = async (scheduleId: string, seatIds: string[], booki
             });
         }
 
-        const availability = await getAvailabilityInternal(tx, scheduleId, schedule, reservation.fromSequence, reservation.toSequence);
-        await inventoryProducer.publishSeatAvailabilityUpdated(
-            scheduleId,
-            schedule.trainId,
-            schedule.totalSeats,
-            availability.locked,
-            availability.booked
-        ).catch((err) => logger.error(`Failed to publish seat availability: ${err.message}`));
-
-        return { count: updateResult.count };
+        return {
+            count: updateResult.count,
+            schedule,
+            fromSequence: reservation.fromSequence,
+            toSequence: reservation.toSequence
+        };
     });
+
+    getAvailabilityInternal(scheduleId, result.schedule, result.fromSequence, result.toSequence)
+        .then((availability) =>
+            inventoryProducer.publishSeatAvailabilityUpdated(
+                scheduleId,
+                result.schedule.trainId,
+                result.schedule.totalSeats,
+                availability.locked,
+                availability.booked
+            )
+        )
+        .catch((err) => logger.error(`Failed to publish seat availability: ${err.message}`));
+
+    return { count: result.count };
 };
 
 export const getSeats = async (
