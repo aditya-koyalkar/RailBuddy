@@ -258,7 +258,8 @@ export const lockSeats = async (
                 throw new BadRequestError("Schedule is not active");
             }
 
-            // Though schedule seats table is not used for storing availability it can be used for seat verification/locking
+            // Although the ScheduleSeat  table does not store seat availability, it acts as a stable row that can be locked (SELECT ... FOR UPDATE) to serialize concurrent booking attempts for the same seat. The actual availability and occupancy are determined from the SeatSegmentReservation table.
+
             const scheduleSeats = await tx.$queryRaw`SELECT * FROM "schedule_seats" WHERE "scheduleId" = ${scheduleId} AND "seatId" IN (${Prisma.join(seatIds)}) FOR UPDATE NOWAIT` as any[];
 
             if (scheduleSeats.length !== seatIds.length) {
