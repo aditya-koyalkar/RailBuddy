@@ -31,7 +31,7 @@ const getAvailabilityInternal = async (
     });
     const uniqueLockedSeatIds = new Set(activeLocks.map((l: any) => l.seatId));
 
-    const activeBookings = await tx.seatSegmentReservation.findMany({
+    const activeBookings = await prisma.seatSegmentReservation.findMany({
         where: {
             scheduleId,
             status: 'BOOKED',
