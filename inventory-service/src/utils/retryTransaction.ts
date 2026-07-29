@@ -1,6 +1,13 @@
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library.js";
 import { logger } from "../config/logger.js";
 
+const RETRYABLE_PG_CODES = new Set([
+    "40001", // serialization_failure
+    "40P01", // deadlock_detected
+    "55P03", // lock_not_available (FOR UPDATE NOWAIT)
+]);
+
+// retries the a function in case of a transaction failure due to serialization or deadlock error
 export const retryTransaction = async (fn: () => any, maxRetries = 3) => {
 
     let lastError;
@@ -9,7 +16,7 @@ export const retryTransaction = async (fn: () => any, maxRetries = 3) => {
             return await fn();
         }
         catch (error) {
-            if (error instanceof PrismaClientKnownRequestError && error.code === "P2034") {
+            if (error instanceof PrismaClientKnownRequestError && RETRYABLE_PG_CODES.has(error.code)) {
                 lastError = error
                 logger.warn(`Transaction failed due to serialization error, retrying...`);
             }

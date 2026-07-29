@@ -319,6 +319,8 @@ export const lockSeats = async (
                 data: lockData
             });
 
+            //outbox pattern save event to DB , rollback transaction on insert fails.
+
             await tx.inventoryOutbox.create({
                 data: {
                     aggregateType: "ScheduleInventory",
@@ -338,22 +340,6 @@ export const lockSeats = async (
             };
         });
     });
-
-    // we will do this using Outbox pattern
-
-    // try {
-    //     const availability = await getAvailabilityInternal(scheduleId, result.schedule, fromSeqNum, toSeqNum)
-
-    //     await inventoryProducer.publishSeatAvailabilityUpdated(
-    //         scheduleId,
-    //         result.schedule.trainId,
-    //         result.schedule.totalSeats,
-    //         availability.locked,
-    //         availability.booked
-    //     )
-    // } catch (err: any) {
-    //     logger.error(`Failed to publish seat availability: ${err.message}`);
-    // };
 
     return {
         bookingId: result.bookingId,
