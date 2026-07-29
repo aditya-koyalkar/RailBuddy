@@ -415,8 +415,8 @@ export const unlockSeats = async (
     return { count: result.count };
 };
 
-export const confirmSeats = async (scheduleId: string, seatIds: string[], bookingId: string) => {
-    if (!scheduleId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0 || !bookingId) {
+export const confirmSeats = async (scheduleId: string, seatIds: string[], userId: string, bookingId: string) => {
+    if (!scheduleId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0 || !userId || !bookingId) {
         throw new BadRequestError("Missing required fields for confirming seats");
     }
 
@@ -443,6 +443,7 @@ export const confirmSeats = async (scheduleId: string, seatIds: string[], bookin
                 where: {
                     bookingId,
                     scheduleId,
+                    lockedBy: userId,
                     status: "LOCKED"
                 }
             });
@@ -456,6 +457,7 @@ export const confirmSeats = async (scheduleId: string, seatIds: string[], bookin
                     scheduleId,
                     seatId: { in: seatIds },
                     bookingId,
+                    lockedBy: userId,
                     status: "LOCKED"
                 },
                 data: {
@@ -484,8 +486,8 @@ export const confirmSeats = async (scheduleId: string, seatIds: string[], bookin
     return { count: result.count };
 };
 
-export const cancelBooking = async (scheduleId: string, seatIds: string[], bookingId: string) => {
-    if (!scheduleId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0 || !bookingId) {
+export const cancelBooking = async (scheduleId: string, seatIds: string[], userId: string, bookingId: string) => {
+    if (!scheduleId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0 || !userId || !bookingId) {
         throw new BadRequestError("Missing required fields for cancelling booking");
     }
 
@@ -512,6 +514,7 @@ export const cancelBooking = async (scheduleId: string, seatIds: string[], booki
                 where: {
                     bookingId,
                     scheduleId,
+                    lockedBy: userId,
                     status: "BOOKED"
                 }
             });
@@ -525,6 +528,7 @@ export const cancelBooking = async (scheduleId: string, seatIds: string[], booki
                     scheduleId,
                     seatId: { in: seatIds },
                     bookingId,
+                    lockedBy: userId,
                     status: "BOOKED"
                 },
                 data: {
