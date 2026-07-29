@@ -245,7 +245,7 @@ export const lockSeats = async (
     }
 
     const result = await retryTransaction(async () => {
-        await prisma.$transaction(async (tx) => {
+        return await prisma.$transaction(async (tx) => {
             const schedule = await tx.scheduleInventory.findUnique({
                 where: { scheduleId }
             });
@@ -361,51 +361,53 @@ export const unlockSeats = async (
         throw new BadRequestError("Missing required fields for releasing seats");
     }
 
-    const result = await prisma.$transaction(async (tx) => {
-        const schedule = await tx.scheduleInventory.findUnique({
-            where: { scheduleId }
-        });
+    const result = await retryTransaction(async () => {
+        return await prisma.$transaction(async (tx) => {
+            const schedule = await tx.scheduleInventory.findUnique({
+                where: { scheduleId }
+            });
 
-        if (!schedule) {
-            throw new NotFoundError("Schedule inventory not found");
-        }
-
-        const deleteResult = await tx.seatSegmentReservation.deleteMany({
-            where: {
-                scheduleId,
-                seatId: { in: seatIds },
-                fromSequence: fromSeqNum,
-                toSequence: toSeqNum,
-                lockedBy: userId,
-                status: "LOCKED"
+            if (!schedule) {
+                throw new NotFoundError("Schedule inventory not found");
             }
-        });
+            if (schedule.status !== "ACTIVE") {
+                throw new BadRequestError("Schedule is not active");
+            }
 
-        if (deleteResult.count > 0) {
-            await tx.scheduleInventory.update({
-                where: { scheduleId },
-                data: {
-                    version: { increment: 1 }
+            const scheduleSeats = await tx.$queryRaw`SELECT * FROM "schedule_seats" WHERE "scheduleId" = ${scheduleId} AND "seatId" IN (${Prisma.join(seatIds)}) FOR UPDATE NOWAIT` as any[];
+
+            if (scheduleSeats.length !== seatIds.length) {
+                throw new NotFoundError("One or more seats not found for this schedule");
+            }
+
+            const deleteResult = await tx.seatSegmentReservation.deleteMany({
+                where: {
+                    scheduleId,
+                    seatId: { in: seatIds },
+                    fromSequence: fromSeqNum,
+                    toSequence: toSeqNum,
+                    lockedBy: userId,
+                    status: "LOCKED"
                 }
             });
-        }
 
-        return { count: deleteResult.count, schedule };
+            if (deleteResult.count > 0) {
+                await tx.inventoryOutbox.create({
+                    data: {
+                        aggregateType: "ScheduleInventory",
+                        aggregateId: scheduleId,
+                        eventType: "SeatAvailabilityChanged",
+                        payload: {
+                            scheduleId,
+                            affectedSeatIds: seatIds
+                        }
+                    }
+                });
+            }
+
+            return { count: deleteResult.count };
+        });
     });
-
-    if (result.count > 0) {
-        getAvailabilityInternal(scheduleId, result.schedule, fromSeqNum, toSeqNum)
-            .then((availability) =>
-                inventoryProducer.publishSeatAvailabilityUpdated(
-                    scheduleId,
-                    result.schedule.trainId,
-                    result.schedule.totalSeats,
-                    availability.locked,
-                    availability.booked
-                )
-            )
-            .catch((err) => logger.error(`Failed to publish seat availability: ${err.message}`));
-    }
 
     return { count: result.count };
 };
@@ -415,67 +417,66 @@ export const confirmSeats = async (scheduleId: string, seatIds: string[], bookin
         throw new BadRequestError("Missing required fields for confirming seats");
     }
 
-    const result = await prisma.$transaction(async (tx) => {
-        const schedule = await tx.scheduleInventory.findUnique({
-            where: { scheduleId }
-        });
+    const result = await retryTransaction(async () => {
+        return await prisma.$transaction(async (tx) => {
+            const schedule = await tx.scheduleInventory.findUnique({
+                where: { scheduleId }
+            });
 
-        if (!schedule) {
-            throw new NotFoundError("Schedule inventory not found");
-        }
-
-        const reservation = await tx.seatSegmentReservation.findFirst({
-            where: {
-                bookingId,
-                scheduleId,
-                status: "LOCKED"
+            if (!schedule) {
+                throw new NotFoundError("Schedule inventory not found");
             }
-        });
-
-        if (!reservation) {
-            throw new NotFoundError("Reservation not found for confirmation");
-        }
-
-        const updateResult = await tx.seatSegmentReservation.updateMany({
-            where: {
-                scheduleId,
-                seatId: { in: seatIds },
-                bookingId,
-                status: "LOCKED"
-            },
-            data: {
-                status: "BOOKED"
+            if (schedule.status !== "ACTIVE") {
+                throw new BadRequestError("Schedule is not active");
             }
-        });
 
-        if (updateResult.count > 0) {
-            await tx.scheduleInventory.update({
-                where: { scheduleId },
-                data: {
-                    version: { increment: 1 }
+            const scheduleSeats = await tx.$queryRaw`SELECT * FROM "schedule_seats" WHERE "scheduleId" = ${scheduleId} AND "seatId" IN (${Prisma.join(seatIds)}) FOR UPDATE NOWAIT` as any[];
+
+            if (scheduleSeats.length !== seatIds.length) {
+                throw new NotFoundError("One or more seats not found for this schedule");
+            }
+
+            const reservation = await tx.seatSegmentReservation.findFirst({
+                where: {
+                    bookingId,
+                    scheduleId,
+                    status: "LOCKED"
                 }
             });
-        }
 
-        return {
-            count: updateResult.count,
-            schedule,
-            fromSequence: reservation.fromSequence,
-            toSequence: reservation.toSequence
-        };
+            if (!reservation) {
+                throw new NotFoundError("Reservation not found for confirmation");
+            }
+
+            const updateResult = await tx.seatSegmentReservation.updateMany({
+                where: {
+                    scheduleId,
+                    seatId: { in: seatIds },
+                    bookingId,
+                    status: "LOCKED"
+                },
+                data: {
+                    status: "BOOKED"
+                }
+            });
+
+            if (updateResult.count > 0) {
+                await tx.inventoryOutbox.create({
+                    data: {
+                        aggregateType: "ScheduleInventory",
+                        aggregateId: scheduleId,
+                        eventType: "SeatAvailabilityChanged",
+                        payload: {
+                            scheduleId,
+                            affectedSeatIds: seatIds
+                        }
+                    }
+                });
+            }
+
+            return { count: updateResult.count };
+        });
     });
-
-    getAvailabilityInternal(scheduleId, result.schedule, result.fromSequence, result.toSequence)
-        .then((availability) =>
-            inventoryProducer.publishSeatAvailabilityUpdated(
-                scheduleId,
-                result.schedule.trainId,
-                result.schedule.totalSeats,
-                availability.locked,
-                availability.booked
-            )
-        )
-        .catch((err) => logger.error(`Failed to publish seat availability: ${err.message}`));
 
     return { count: result.count };
 };
@@ -485,67 +486,66 @@ export const cancelBooking = async (scheduleId: string, seatIds: string[], booki
         throw new BadRequestError("Missing required fields for cancelling booking");
     }
 
-    const result = await prisma.$transaction(async (tx) => {
-        const schedule = await tx.scheduleInventory.findUnique({
-            where: { scheduleId }
-        });
+    const result = await retryTransaction(async () => {
+        return await prisma.$transaction(async (tx) => {
+            const schedule = await tx.scheduleInventory.findUnique({
+                where: { scheduleId }
+            });
 
-        if (!schedule) {
-            throw new NotFoundError("Schedule inventory not found");
-        }
-
-        const reservation = await tx.seatSegmentReservation.findFirst({
-            where: {
-                bookingId,
-                scheduleId,
-                status: "BOOKED"
+            if (!schedule) {
+                throw new NotFoundError("Schedule inventory not found");
             }
-        });
-
-        if (!reservation) {
-            throw new NotFoundError("Reservation not found for cancellation");
-        }
-
-        const updateResult = await tx.seatSegmentReservation.updateMany({
-            where: {
-                scheduleId,
-                seatId: { in: seatIds },
-                bookingId,
-                status: "BOOKED"
-            },
-            data: {
-                status: "CANCELLED"
+            if (schedule.status !== "ACTIVE") {
+                throw new BadRequestError("Schedule is not active");
             }
-        });
 
-        if (updateResult.count > 0) {
-            await tx.scheduleInventory.update({
-                where: { scheduleId },
-                data: {
-                    version: { increment: 1 }
+            const scheduleSeats = await tx.$queryRaw`SELECT * FROM "schedule_seats" WHERE "scheduleId" = ${scheduleId} AND "seatId" IN (${Prisma.join(seatIds)}) FOR UPDATE NOWAIT` as any[];
+
+            if (scheduleSeats.length !== seatIds.length) {
+                throw new NotFoundError("One or more seats not found for this schedule");
+            }
+
+            const reservation = await tx.seatSegmentReservation.findFirst({
+                where: {
+                    bookingId,
+                    scheduleId,
+                    status: "BOOKED"
                 }
             });
-        }
 
-        return {
-            count: updateResult.count,
-            schedule,
-            fromSequence: reservation.fromSequence,
-            toSequence: reservation.toSequence
-        };
+            if (!reservation) {
+                throw new NotFoundError("Reservation not found for cancellation");
+            }
+
+            const updateResult = await tx.seatSegmentReservation.updateMany({
+                where: {
+                    scheduleId,
+                    seatId: { in: seatIds },
+                    bookingId,
+                    status: "BOOKED"
+                },
+                data: {
+                    status: "CANCELLED"
+                }
+            });
+
+            if (updateResult.count > 0) {
+                await tx.inventoryOutbox.create({
+                    data: {
+                        aggregateType: "ScheduleInventory",
+                        aggregateId: scheduleId,
+                        eventType: "SeatAvailabilityChanged",
+                        payload: {
+                            scheduleId,
+                            affectedSeatIds: seatIds
+                        }
+                    }
+                });
+            }
+
+            return { count: updateResult.count };
+        });
     });
-
-    getAvailabilityInternal(scheduleId, result.schedule, result.fromSequence, result.toSequence)
-        .then((availability) =>
-            inventoryProducer.publishSeatAvailabilityUpdated(
-                scheduleId,
-                result.schedule.trainId,
-                result.schedule.totalSeats,
-                availability.locked,
-                availability.booked
-            )
-        )
-        .catch((err) => logger.error(`Failed to publish seat availability: ${err.message}`));
 
     return { count: result.count };
 };
