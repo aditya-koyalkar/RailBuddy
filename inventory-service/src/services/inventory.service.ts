@@ -478,6 +478,9 @@ export const confirmSeats = async (scheduleId: string, seatIds: string[], userId
                     }
                 });
             }
+            else {
+                throw new ConflictError("Failed to confirm seats")
+            }
 
             return { count: updateResult.count };
         });
@@ -548,6 +551,9 @@ export const cancelBooking = async (scheduleId: string, seatIds: string[], userI
                         }
                     }
                 });
+            }
+            else {
+                throw new ConflictError("Failed to cancel booking");
             }
 
             return { count: updateResult.count };
