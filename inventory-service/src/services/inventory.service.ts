@@ -415,8 +415,18 @@ export const unlockSeats = async (
     return { count: result.count };
 };
 
-export const confirmSeats = async (scheduleId: string, seatIds: string[], userId: string, bookingId: string) => {
-    if (!scheduleId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0 || !userId || !bookingId) {
+export const confirmSeats = async (
+    scheduleId: string,
+    seatIds: string[],
+    userId: string,
+    fromSeq: number,
+    toSeq: number,
+    bookingId: string
+) => {
+    const fromSeqNum = Number(fromSeq);
+    const toSeqNum = Number(toSeq);
+
+    if (!scheduleId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0 || !userId || !bookingId || fromSeq === undefined || toSeq === undefined) {
         throw new BadRequestError("Missing required fields for confirming seats");
     }
 
@@ -439,17 +449,20 @@ export const confirmSeats = async (scheduleId: string, seatIds: string[], userId
                 throw new NotFoundError("One or more seats not found for this schedule");
             }
 
-            const reservation = await tx.seatSegmentReservation.findFirst({
+            const reservations = await tx.seatSegmentReservation.findMany({
                 where: {
                     bookingId,
                     scheduleId,
                     lockedBy: userId,
-                    status: "LOCKED"
+                    status: "LOCKED",
+                    fromSequence: fromSeqNum,
+                    toSequence: toSeqNum,
+                    seatId: { in: seatIds }
                 }
             });
 
-            if (!reservation) {
-                throw new NotFoundError("Reservation not found for confirmation");
+            if (reservations.length !== seatIds.length) {
+                throw new NotFoundError("One or more reservations not found for confirmation");
             }
 
             const updateResult = await tx.seatSegmentReservation.updateMany({
@@ -458,10 +471,13 @@ export const confirmSeats = async (scheduleId: string, seatIds: string[], userId
                     seatId: { in: seatIds },
                     bookingId,
                     lockedBy: userId,
-                    status: "LOCKED"
+                    status: "LOCKED",
+                    fromSequence: fromSeqNum,
+                    toSequence: toSeqNum
                 },
                 data: {
-                    status: "BOOKED"
+                    status: "BOOKED",
+                    version: { increment: 1 }
                 }
             });
 
@@ -489,8 +505,18 @@ export const confirmSeats = async (scheduleId: string, seatIds: string[], userId
     return { count: result.count };
 };
 
-export const cancelBooking = async (scheduleId: string, seatIds: string[], userId: string, bookingId: string) => {
-    if (!scheduleId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0 || !userId || !bookingId) {
+export const cancelBooking = async (
+    scheduleId: string,
+    seatIds: string[],
+    userId: string,
+    fromSeq: number,
+    toSeq: number,
+    bookingId: string
+) => {
+    const fromSeqNum = Number(fromSeq);
+    const toSeqNum = Number(toSeq);
+
+    if (!scheduleId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0 || !userId || !bookingId || fromSeq === undefined || toSeq === undefined) {
         throw new BadRequestError("Missing required fields for cancelling booking");
     }
 
@@ -513,17 +539,20 @@ export const cancelBooking = async (scheduleId: string, seatIds: string[], userI
                 throw new NotFoundError("One or more seats not found for this schedule");
             }
 
-            const reservation = await tx.seatSegmentReservation.findFirst({
+            const reservations = await tx.seatSegmentReservation.findMany({
                 where: {
                     bookingId,
                     scheduleId,
                     lockedBy: userId,
-                    status: "BOOKED"
+                    status: "BOOKED",
+                    fromSequence: fromSeqNum,
+                    toSequence: toSeqNum,
+                    seatId: { in: seatIds }
                 }
             });
 
-            if (!reservation) {
-                throw new NotFoundError("Reservation not found for cancellation");
+            if (reservations.length !== seatIds.length) {
+                throw new NotFoundError("One or more reservations not found for cancellation");
             }
 
             const updateResult = await tx.seatSegmentReservation.updateMany({
@@ -532,10 +561,13 @@ export const cancelBooking = async (scheduleId: string, seatIds: string[], userI
                     seatId: { in: seatIds },
                     bookingId,
                     lockedBy: userId,
-                    status: "BOOKED"
+                    status: "BOOKED",
+                    fromSequence: fromSeqNum,
+                    toSequence: toSeqNum
                 },
                 data: {
-                    status: "CANCELLED"
+                    status: "CANCELLED",
+                    version: { increment: 1 }
                 }
             });
 

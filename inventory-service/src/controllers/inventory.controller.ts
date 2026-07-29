@@ -88,14 +88,21 @@ export const unlockSeats = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const confirmSeats = asyncHandler(async (req: Request, res: Response) => {
-    const { scheduleId, seatIds, bookingId, userId } = req.body;
+    const { scheduleId, seatIds, bookingId, userId, fromSeq, toSeq } = req.body;
     const resolvedUserId = userId || req.user?.id;
 
-    if (!scheduleId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0 || !bookingId || !resolvedUserId) {
+    if (!scheduleId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0 || !bookingId || !resolvedUserId || fromSeq === undefined || toSeq === undefined) {
         throw new BadRequestError("Missing required fields for confirming seats");
     }
 
-    const result = await inventoryService.confirmSeats(scheduleId, seatIds, resolvedUserId, bookingId);
+    const result = await inventoryService.confirmSeats(
+        scheduleId,
+        seatIds,
+        resolvedUserId,
+        Number(fromSeq),
+        Number(toSeq),
+        bookingId
+    );
 
     return res.status(200).json({
         success: true,
@@ -105,14 +112,21 @@ export const confirmSeats = asyncHandler(async (req: Request, res: Response) => 
 });
 
 export const cancelBooking = asyncHandler(async (req: Request, res: Response) => {
-    const { scheduleId, seatIds, bookingId, userId } = req.body;
+    const { scheduleId, seatIds, bookingId, userId, fromSeq, toSeq } = req.body;
     const resolvedUserId = userId || req.user?.id;
 
-    if (!scheduleId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0 || !bookingId || !resolvedUserId) {
+    if (!scheduleId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0 || !bookingId || !resolvedUserId || fromSeq === undefined || toSeq === undefined) {
         throw new BadRequestError("Missing required fields for cancelling booking");
     }
 
-    const result = await inventoryService.cancelBooking(scheduleId, seatIds, resolvedUserId, bookingId);
+    const result = await inventoryService.cancelBooking(
+        scheduleId,
+        seatIds,
+        resolvedUserId,
+        Number(fromSeq),
+        Number(toSeq),
+        bookingId
+    );
 
     return res.status(200).json({
         success: true,
