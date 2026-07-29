@@ -6,7 +6,7 @@ import inventoryService from "../services/inventory.service.js";
 export const getAvailability = asyncHandler(async (req: Request, res: Response) => {
     const scheduleId = req.params.scheduleId as string;
     const { fromSeq, toSeq } = req.query;
-    
+
     if (fromSeq === undefined || toSeq === undefined) {
         throw new BadRequestError("fromSeq and toSeq query parameters are required");
     }
@@ -20,25 +20,6 @@ export const getAvailability = asyncHandler(async (req: Request, res: Response) 
         success: true,
         data: availability
     })
-});
-
-export const getSeats = asyncHandler(async (req: Request, res: Response) => {
-    const scheduleId = req.params.scheduleId as string;
-    const { status, seatType, fromSeq, toSeq } = req.query;
-
-    const resultSeats = await inventoryService.getSeats(scheduleId, {
-        status: status as string,
-        seatType: seatType as string,
-        fromSeq: fromSeq ? Number(fromSeq) : undefined,
-        toSeq: toSeq ? Number(toSeq) : undefined
-    });
-
-    return res.status(200).json({
-        success: true,
-        data: {
-            seats: resultSeats
-        }
-    });
 });
 
 export const lockSeats = asyncHandler(async (req: Request, res: Response) => {
