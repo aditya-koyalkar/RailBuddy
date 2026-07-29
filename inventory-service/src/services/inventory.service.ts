@@ -380,7 +380,7 @@ export const unlockSeats = async (
                 throw new NotFoundError("One or more seats not found for this schedule");
             }
 
-            const deleteResult = await tx.seatSegmentReservation.deleteMany({
+            const unlockResult = await tx.seatSegmentReservation.updateMany({
                 where: {
                     scheduleId,
                     seatId: { in: seatIds },
@@ -388,10 +388,13 @@ export const unlockSeats = async (
                     toSequence: toSeqNum,
                     lockedBy: userId,
                     status: "LOCKED"
+                },
+                data: {
+                    status: "EXPIRED"
                 }
             });
 
-            if (deleteResult.count > 0) {
+            if (unlockResult.count > 0) {
                 await tx.inventoryOutbox.create({
                     data: {
                         aggregateType: "ScheduleInventory",
@@ -405,7 +408,7 @@ export const unlockSeats = async (
                 });
             }
 
-            return { count: deleteResult.count };
+            return { count: unlockResult.count };
         });
     });
 
