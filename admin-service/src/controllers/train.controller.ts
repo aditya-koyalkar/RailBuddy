@@ -80,3 +80,19 @@ export const createSchedule = asyncHandler(async (req, res) => {
         data: schedule
     });
 });
+
+export const createFares = asyncHandler(async (req, res) => {
+    const { trainId, fares } = req.body;
+
+    if (!trainId || !fares || !Array.isArray(fares) || fares.length === 0) {
+        throw new BadRequestError("Train ID and fares array are required");
+    }
+
+    const result = await trainService.createFares(trainId, fares);
+
+    return res.status(201).json({
+        success: true,
+        message: "Fares initialized successfully",
+        data: result
+    });
+});

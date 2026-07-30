@@ -280,6 +280,50 @@ const createSchedule = async ({ trainId, departureDate, status }: CreateSchedule
     return schedule
 }
 
-export default { createTrain, createRoute, getTrainById, createSchedule }
+const createFares = async (trainId: string, fares: Array<{ fromStationId: string; toStationId: string; coachType: any; fare: number }>) => {
+    const train = await prisma.train.findUnique({
+        where: { id: trainId }
+    });
+
+    if (!train) {
+        throw new NotFoundError("Train not found");
+    }
+
+    if (!fares || !Array.isArray(fares) || fares.length === 0) {
+        throw new BadRequestError("Fares array is required and cannot be empty");
+    }
+
+    for (const fareItem of fares) {
+        if (!fareItem.fromStationId || !fareItem.toStationId || !fareItem.coachType || fareItem.fare === undefined || fareItem.fare < 0) {
+            throw new BadRequestError("Each fare item must include fromStationId, toStationId, coachType, and a non-negative fare amount");
+        }
+    }
+
+    const createdFares = await prisma.$transaction(async (tx) => {
+        await tx.fare.deleteMany({
+            where: { trainId }
+        });
+
+        await tx.fare.createMany({
+            data: fares.map((f) => ({
+                trainId,
+                fromStationId: f.fromStationId,
+                toStationId: f.toStationId,
+                coachType: f.coachType,
+                fare: f.fare
+            }))
+        });
+
+        return await tx.fare.findMany({
+            where: { trainId }
+        });
+    });
+
+    logger.info("Fares initialized successfully", { trainId, count: createdFares.length });
+
+    return createdFares;
+}
+
+export default { createTrain, createRoute, getTrainById, createSchedule, createFares }
 
 
