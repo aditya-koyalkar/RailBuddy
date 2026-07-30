@@ -232,7 +232,7 @@ export const lockSeats = async (
     ttlSeconds: number,
     fromSeq: number,
     toSeq: number,
-    bookingId?: string
+    bookingId: string
 ) => {
     const ttl = Math.min(Math.max(ttlSeconds || config.LOCK_TTL_SECONDS, 60), 600);
     const lockExpiresAt = new Date(Date.now() + ttl * 1000);
@@ -240,7 +240,7 @@ export const lockSeats = async (
     const fromSeqNum = Number(fromSeq);
     const toSeqNum = Number(toSeq);
 
-    if (!scheduleId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0 || !userId) {
+    if (!scheduleId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0 || !userId || !bookingId) {
         throw new BadRequestError("Missing required fields for locking seats");
     }
 
@@ -298,12 +298,10 @@ export const lockSeats = async (
                 throw new ConflictError(`Seat ${conflict.seatId} is already locked/booked for overlapping segment`);
             }
 
-            const resolvedBookingId = bookingId || `temp-lock-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
             const lockData = scheduleSeats.map((si: any) => ({
                 scheduleInventoryId: schedule.id,
                 scheduleSeatId: si.id,
-                bookingId: resolvedBookingId,
+                bookingId,
                 scheduleId,
                 seatId: si.seatId,
                 fromStationId: fromRouteStop.stationId,
@@ -334,7 +332,7 @@ export const lockSeats = async (
             });
 
             return {
-                bookingId: resolvedBookingId,
+                bookingId,
                 expiresAt: lockExpiresAt,
                 schedule
             };
@@ -353,12 +351,12 @@ export const unlockSeats = async (
     userId: string,
     fromSeq: number,
     toSeq: number,
-    bookingId?: string
+    bookingId: string
 ) => {
     const fromSeqNum = Number(fromSeq);
     const toSeqNum = Number(toSeq);
 
-    if (!scheduleId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0 || !userId) {
+    if (!scheduleId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0 || !userId || !bookingId) {
         throw new BadRequestError("Missing required fields for releasing seats");
     }
 
@@ -381,21 +379,16 @@ export const unlockSeats = async (
                 throw new NotFoundError("One or more seats not found for this schedule");
             }
 
-            const whereClause: any = {
-                scheduleId,
-                seatId: { in: seatIds },
-                fromSequence: fromSeqNum,
-                toSequence: toSeqNum,
-                lockedBy: userId,
-                status: "LOCKED"
-            };
-
-            if (bookingId) {
-                whereClause.bookingId = bookingId;
-            }
-
             const unlockResult = await tx.seatSegmentReservation.updateMany({
-                where: whereClause,
+                where: {
+                    scheduleId,
+                    seatId: { in: seatIds },
+                    bookingId,
+                    fromSequence: fromSeqNum,
+                    toSequence: toSeqNum,
+                    lockedBy: userId,
+                    status: "LOCKED"
+                },
                 data: {
                     status: "EXPIRED"
                 }

@@ -25,7 +25,7 @@ export const getAvailability = asyncHandler(async (req: Request, res: Response) 
 export const lockSeats = asyncHandler(async (req: Request, res: Response) => {
     const { scheduleId, seatIds, userId, ttlSeconds, fromSeq, toSeq, bookingId } = req.body;
 
-    if (!scheduleId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0 || !userId || fromSeq === undefined || toSeq === undefined) {
+    if (!scheduleId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0 || !userId || !bookingId || fromSeq === undefined || toSeq === undefined) {
         throw new BadRequestError("Missing required fields for locking seats");
     }
 
@@ -49,7 +49,7 @@ export const lockSeats = asyncHandler(async (req: Request, res: Response) => {
 export const unlockSeats = asyncHandler(async (req: Request, res: Response) => {
     const { scheduleId, seatIds, userId, fromSeq, toSeq, bookingId } = req.body;
 
-    if (!scheduleId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0 || !userId || fromSeq === undefined || toSeq === undefined) {
+    if (!scheduleId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0 || !userId || !bookingId || fromSeq === undefined || toSeq === undefined) {
         throw new BadRequestError("Missing required fields for unlocking seats");
     }
 

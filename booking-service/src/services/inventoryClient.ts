@@ -16,7 +16,7 @@ const inventoryClient = {
             return data.data;
         })
     },
-    async holdSeats(scheduleId: string, seatIds: string[], userId: string, ttlSeconds: number, fromSeq: number, toSeq: number, bookingId?: string) {
+    async holdSeats(scheduleId: string, seatIds: string[], userId: string, ttlSeconds: number, fromSeq: number, toSeq: number, bookingId: string) {
         return withRetry(async () => {
             const { data } = await client.post('/seats/lock', {
                 scheduleId, seatIds, userId, ttlSeconds, fromSeq, toSeq, bookingId
@@ -24,7 +24,7 @@ const inventoryClient = {
             return data.data;
         })
     },
-    async releaseSeats(scheduleId: string, seatIds: string[], userId: string, fromSeq: number, toSeq: number, bookingId?: string) {
+    async releaseSeats(scheduleId: string, seatIds: string[], userId: string, fromSeq: number, toSeq: number, bookingId: string) {
         return withRetry(async () => {
             const { data } = await client.post('/seats/release', {
                 scheduleId, seatIds, userId, fromSeq, toSeq, bookingId
