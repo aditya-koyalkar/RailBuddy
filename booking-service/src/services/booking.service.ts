@@ -44,13 +44,15 @@ const createBooking = async (
         throw new Error("fromSeq must be less than toSeq")
     }
 
+    // incase of duplicate request return the stored response. Ex : (user retrying on a network error or request timeout)
+
     const cached = await checkIdempotency(`booking:${idempotencyKey}`);
 
     if (cached) {
         return cached;
     }
 
-    const availability = await inventoryClient.getAvailability(scheduleId, fromSeq, toSeq)
+    const availability = await inventoryClient.getAvailability(scheduleId)
 
     if (availability.status !== 'ACTIVE') {
         throw new BadRequestError('Schedule is not active');

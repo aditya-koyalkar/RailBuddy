@@ -202,13 +202,23 @@ const cancelSheduleInventory = async (eventData: any) => {
     }
 }
 
-export const getAvailability = async (scheduleId: string, fromSeq: number, toSeq: number) => {
+export const getAvailability = async (scheduleId: string, fromSeq?: number, toSeq?: number) => {
     const schedule = await prisma.scheduleInventory.findUnique({
         where: { scheduleId }
     });
 
     if (!schedule) {
         throw new NotFoundError("Schedule inventory not found");
+    }
+
+    if (fromSeq === undefined || toSeq === undefined) {
+        return {
+            scheduleId: schedule.scheduleId,
+            trainId: schedule.trainId,
+            departureDate: schedule.departureDate,
+            version: schedule.version,
+            status: schedule.status
+        };
     }
 
     const counts = await getAvailabilityInternal(scheduleId, schedule, fromSeq, toSeq);
@@ -221,6 +231,7 @@ export const getAvailability = async (scheduleId: string, fromSeq: number, toSeq
         available: counts.available,
         locked: counts.locked,
         booked: counts.booked,
+        version: schedule.version,
         status: schedule.status
     }
 }
