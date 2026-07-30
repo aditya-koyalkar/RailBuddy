@@ -252,10 +252,14 @@ const createBooking = async (
                     failureReason: error.response?.data?.message || error.message
                 }
             })
-            await releaseSeatLocks(scheduleId, sortedSeatIds, lockValue!, fromSeq, toSeq)
         }
-
         throw error
+    }
+    finally {
+        // releasing lock on both success and failure. (success because user might cancel booking and retry the same seat)
+        if (lockValue) {
+            await releaseSeatLocks(scheduleId, sortedSeatIds, lockValue!, fromSeq, toSeq);
+        }
     }
 }
 
