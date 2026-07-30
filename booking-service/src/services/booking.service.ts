@@ -99,6 +99,8 @@ const createBooking = async (
 
     const sortedSeatIds = [...seatIds].sort();
 
+    // Even though we have row-level locking in inventory DB, Redis distributed lock is used to shield the inventory database from connection exhaustion during high traffic.
+
     const { acquired, lockValue } = await acquireSeatLocks(scheduleId, sortedSeatIds, `pre-${Date.now()}`, config.BOOKING_TTL_SECONDS, fromSeq, toSeq)
 
     if (!acquired) {
