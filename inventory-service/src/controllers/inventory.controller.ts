@@ -47,7 +47,7 @@ export const lockSeats = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const unlockSeats = asyncHandler(async (req: Request, res: Response) => {
-    const { scheduleId, seatIds, userId, fromSeq, toSeq } = req.body;
+    const { scheduleId, seatIds, userId, fromSeq, toSeq, bookingId } = req.body;
 
     if (!scheduleId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0 || !userId || fromSeq === undefined || toSeq === undefined) {
         throw new BadRequestError("Missing required fields for unlocking seats");
@@ -58,7 +58,8 @@ export const unlockSeats = asyncHandler(async (req: Request, res: Response) => {
         seatIds,
         userId,
         Number(fromSeq),
-        Number(toSeq)
+        Number(toSeq),
+        bookingId
     );
 
     return res.status(200).json({
@@ -119,3 +120,25 @@ export const cancelBooking = asyncHandler(async (req: Request, res: Response) =>
 // Keep holdSeats and releaseSeats as aliases for backward compatibility
 export const holdSeats = lockSeats;
 export const releaseSeats = unlockSeats;
+
+export const getSeatsByIds = asyncHandler(async (req: Request, res: Response) => {
+    const scheduleId = req.params.scheduleId as string;
+    const { seatIds, fromSeq, toSeq } = req.query;
+
+    if (!scheduleId || !seatIds || fromSeq === undefined || toSeq === undefined) {
+        throw new BadRequestError("scheduleId, seatIds, fromSeq, and toSeq are required");
+    }
+
+    const ids = Array.isArray(seatIds) ? (seatIds as string[]) : (seatIds as string).split(',');
+
+    if (ids.length === 0) {
+        throw new BadRequestError("At least one seatId is required");
+    }
+
+    const seats = await inventoryService.getSeatsByIds(scheduleId, ids, Number(fromSeq), Number(toSeq));
+
+    return res.status(200).json({
+        success: true,
+        data: seats
+    });
+});

@@ -2,7 +2,7 @@ import { config } from "../config"
 import { logger } from "../config/logger"
 import { prisma } from "../config/prisma"
 import { acquireSeatLocks, releaseSeatLocks } from "../utils/distributedLock"
-import { BadRequestError, ConflictError, NotFoundError } from "../utils/error"
+import { BadRequestError, ConflictError } from "../utils/error"
 import inventoryClient from "./inventoryClient"
 import adminClient from "./adminClient"
 import sagaService from "./saga.service"
@@ -35,7 +35,7 @@ const createBooking = async (
         throw new Error("All fields are required")
     }
     if (!Array.isArray(seatIds) || seatIds.length === 0) {
-        throw new Error("Seat ids are required")
+        throw new Error("Seat IDs are required")
     }
     if (!Array.isArray(passengers) || passengers.length !== seatIds.length) {
         throw new Error("Passengers are required and must be equal to the number of seats")
@@ -60,32 +60,41 @@ const createBooking = async (
         throw new BadRequestError('cannot book a train that is already departed')
     }
 
-    const seatData = await inventoryClient.getSeats(scheduleId, { status: 'AVAILABLE', seatType: 'SLEEPER', fromSeq, toSeq })
+    // Fetch train details from admin service (including fares and route stops)
+    const train = await adminClient.getTrainDetails(trainId, userId);
+    const stops = train.route?.stops || [];
+    const fromStop = stops.find((s: any) => s.stationId === fromStationId);
+    const toStop = stops.find((s: any) => s.stationId === toStationId);
 
-    if (!seatData) {
-        throw new BadRequestError('Seat data not found')
-    }
+    const fromStationCode = fromStop?.station?.code || "";
+    const fromStationName = fromStop?.station?.name || "";
+    const toStationCode = toStop?.station?.code || "";
+    const toStationName = toStop?.station?.name || "";
 
-    const seatMap = new Map(seatData.seats.map((s: any) => [s.seatId, s]))
+    // Fetch seat metadata + segment availability from inventory service
+    const seats = await inventoryClient.getSeatsByIds(scheduleId, seatIds, fromSeq, toSeq);
 
-    const bookingSeats: any[] = [];
+    const bookingSeats = seats;
+    const seatFaresMap = new Map<string, number>();
     let totalAmount = 0;
 
-    for (const seatId of seatIds) {
-        const seat: any = seatMap.get(seatId);
+    const fares = train.fares || [];
 
-        if (!seat) {
-            throw new NotFoundError(`Seat ${seatId} not found`)
+    for (const seat of seats) {
+        if (seat.segmentStatus !== 'AVAILABLE') {
+            throw new BadRequestError(`Seat ${seat.seatId} is not available (status: ${seat.segmentStatus})`, 'SEAT_UNAVAILABLE');
         }
 
-        const isAvailable = seat.segmentStatus === 'AVAILABLE';
+        const fareObj = fares.find((f: any) =>
+            f.fromStationId === fromStationId &&
+            f.toStationId === toStationId &&
+            f.coachType?.toUpperCase() === seat.coachType.toUpperCase()
+        );
 
-        if (!isAvailable) {
-            throw new BadRequestError(`Seat ${seatId} is not available`, 'SEAT_UNAVAILABLE');
-        }
+        const seatFare = fareObj ? Number(fareObj.fare) : 0;
 
-        bookingSeats.push(seat);
-        totalAmount += Number(seat.price || 0);
+        seatFaresMap.set(seat.seatId, seatFare);
+        totalAmount += seatFare;
     }
 
     const sortedSeatIds = [...seatIds].sort();
@@ -100,17 +109,6 @@ const createBooking = async (
 
     try {
         const lockExpiresAt = new Date(Date.now() + config.BOOKING_TTL_SECONDS * 1000);
-
-        // Fetch train details from admin service
-        const train = await adminClient.getTrainDetails(trainId, userId);
-        const stops = train.route?.stops || [];
-        const fromStop = stops.find((s: any) => s.stationId === fromStationId);
-        const toStop = stops.find((s: any) => s.stationId === toStationId);
-
-        const fromStationCode = fromStop?.station?.code || "";
-        const fromStationName = fromStop?.station?.name || "";
-        const toStationCode = toStop?.station?.code || "";
-        const toStationName = toStop?.station?.name || "";
 
         const pnr = generatePNR();
 
@@ -153,16 +151,17 @@ const createBooking = async (
 
             const seatAssignmentsData = created.passengers.map((passenger, index) => {
                 const seat = bookingSeats[index];
+                const fare = seatFaresMap.get(seat.seatId) ?? 0;
                 return {
                     bookingId: created.id,
                     passengerId: passenger.id,
                     seatId: seat.seatId,
-                    coachNumber: seat.coachNumber || "A1",
-                    coachType: seat.coachType || "SLEEPER",
+                    coachNumber: seat.coachNumber,
+                    coachType: seat.coachType,
                     seatNumber: Number(seat.seatNumber),
-                    seatLabel: seat.seatLabel || String(seat.seatNumber),
+                    seatLabel: seat.seatLabel,
                     seatType: seat.seatType,
-                    fare: seat.price || 0
+                    fare
                 };
             });
 

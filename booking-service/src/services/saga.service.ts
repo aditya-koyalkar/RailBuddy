@@ -21,7 +21,7 @@ async function executeHoldSeats(booking: any, seatIds: any[], ttlSeconds: number
     });
 
     try {
-        const result = await inventoryClient.holdSeats(booking.scheduleId, seatIds, booking.userId, ttlSeconds, fromSeq, toSeq)
+        const result = await inventoryClient.holdSeats(booking.scheduleId, seatIds, booking.userId, ttlSeconds, fromSeq, toSeq, booking.id)
 
         await prisma.sagaLog.update({
             where: { id: sagaLog.id },
@@ -185,7 +185,7 @@ async function compensateCreatePayment(booking: any) {
 async function compensateHoldSeats(booking: any, seatIds: string[]) {
     logger.info(`Compensating hold/lock seats for booking ${booking.id}`)
     try {
-        await inventoryClient.releaseSeats(booking.scheduleId, seatIds, booking.userId, booking.fromSequence, booking.toSequence);
+        await inventoryClient.releaseSeats(booking.scheduleId, seatIds, booking.userId, booking.fromSequence, booking.toSequence, booking.id);
 
         // Mark saga step as compensated
         await prisma.sagaLog.updateMany({

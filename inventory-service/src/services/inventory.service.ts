@@ -352,7 +352,8 @@ export const unlockSeats = async (
     seatIds: string[],
     userId: string,
     fromSeq: number,
-    toSeq: number
+    toSeq: number,
+    bookingId?: string
 ) => {
     const fromSeqNum = Number(fromSeq);
     const toSeqNum = Number(toSeq);
@@ -380,15 +381,21 @@ export const unlockSeats = async (
                 throw new NotFoundError("One or more seats not found for this schedule");
             }
 
+            const whereClause: any = {
+                scheduleId,
+                seatId: { in: seatIds },
+                fromSequence: fromSeqNum,
+                toSequence: toSeqNum,
+                lockedBy: userId,
+                status: "LOCKED"
+            };
+
+            if (bookingId) {
+                whereClause.bookingId = bookingId;
+            }
+
             const unlockResult = await tx.seatSegmentReservation.updateMany({
-                where: {
-                    scheduleId,
-                    seatId: { in: seatIds },
-                    fromSequence: fromSeqNum,
-                    toSequence: toSeqNum,
-                    lockedBy: userId,
-                    status: "LOCKED"
-                },
+                where: whereClause,
                 data: {
                     status: "EXPIRED"
                 }
@@ -595,4 +602,66 @@ export const cancelBooking = async (
     return { count: result.count };
 };
 
-export default { initializeInventory, cancelSheduleInventory, getAvailability, lockSeats, unlockSeats, confirmSeats, cancelBooking }
+export const getSeatsByIds = async (scheduleId: string, seatIds: string[], fromSeq: number, toSeq: number) => {
+    const fromSeqNum = Number(fromSeq);
+    const toSeqNum = Number(toSeq);
+
+    if (!scheduleId || !seatIds || seatIds.length === 0) {
+        throw new BadRequestError("scheduleId and seatIds are required");
+    }
+    if (fromSeq === undefined || toSeq === undefined) {
+        throw new BadRequestError("fromSeq and toSeq are required");
+    }
+
+    const seats = await prisma.scheduleSeat.findMany({
+        where: {
+            scheduleId,
+            seatId: { in: seatIds }
+        }
+    });
+
+    if (seats.length !== seatIds.length) {
+        const foundIds = new Set(seats.map((s) => s.seatId));
+        const missing = seatIds.filter((id) => !foundIds.has(id));
+        throw new NotFoundError(`Seats not found: ${missing.join(', ')}`);
+    }
+
+    // Check segment availability for each seat
+    const now = new Date();
+    const overlappingReservations = await prisma.seatSegmentReservation.findMany({
+        where: {
+            scheduleId,
+            seatId: { in: seatIds },
+            fromSequence: { lt: toSeqNum },
+            toSequence: { gt: fromSeqNum },
+            OR: [
+                { status: "BOOKED" },
+                { status: "LOCKED", expiresAt: null },
+                { status: "LOCKED", expiresAt: { gt: now } }
+            ]
+        },
+        select: { seatId: true, status: true }
+    });
+
+    // Build a status map: if any reservation is BOOKED, seat is BOOKED; if LOCKED, seat is LOCKED
+    const statusMap = new Map<string, string>();
+    for (const r of overlappingReservations) {
+        const current = statusMap.get(r.seatId);
+        if (r.status === 'BOOKED' || current !== 'BOOKED') {
+            statusMap.set(r.seatId, r.status);
+        }
+    }
+
+    return seats.map((s) => ({
+        seatId: s.seatId,
+        coachId: s.coachId,
+        coachNumber: s.coachNumber,
+        coachType: s.coachType,
+        seatNumber: s.seatNumber,
+        seatLabel: s.seatLabel,
+        seatType: s.seatType,
+        segmentStatus: statusMap.get(s.seatId) || 'AVAILABLE'
+    }));
+};
+
+export default { initializeInventory, cancelSheduleInventory, getAvailability, lockSeats, unlockSeats, confirmSeats, cancelBooking, getSeatsByIds }
