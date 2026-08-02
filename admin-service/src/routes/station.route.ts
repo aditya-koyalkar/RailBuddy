@@ -1,10 +1,9 @@
 import express from "express"
-import { getUserContext } from "../middlewares/getUserContext"
+import { requireAdmin } from "../middlewares/requireAdmin.middleware"
 import { createStation } from "../controllers/station.controller"
 
 const router = express.Router()
 
-router.post('/station', getUserContext, createStation)
-
+router.post('/station', requireAdmin, createStation)
 
 export default router
