@@ -1,5 +1,4 @@
-const API_BASE_URL = 'http://localhost:4000/api';
-
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 // Helper for making fetch requests with headers & credentials
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('accessToken');
