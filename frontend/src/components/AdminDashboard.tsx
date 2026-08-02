@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { adminApi } from '../services/api';
-import { Shield, Plus, Train, MapPin, Calendar, DollarSign, Layers, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Shield, Plus, Train, MapPin, Calendar, DollarSign, Layers, RefreshCw, CheckCircle2, AlertCircle, ArrowDown } from 'lucide-react';
 
 export const AdminDashboard: React.FC = () => {
   const { isAdmin } = useAuth();
@@ -25,17 +25,81 @@ export const AdminDashboard: React.FC = () => {
   const [trainNumber, setTrainNumber] = useState('');
   const [trainName, setTrainName] = useState('');
   const [coachesInput, setCoachesInput] = useState<Array<{ coachNumber: string; coachType: string; seatCount: number }>>([
-    { coachNumber: 'B1', coachType: '3A', seatCount: 24 },
-    { coachNumber: 'B2', coachType: '3A', seatCount: 24 },
-    { coachNumber: 'A1', coachType: '2A', seatCount: 18 },
+    { coachNumber: 'C1', coachType: 'GENERAL', seatCount: 24 },
+    { coachNumber: 'FC1', coachType: 'FIRST_CLASS', seatCount: 18 },
   ]);
 
   // Route Form
   const [routeTrainId, setRouteTrainId] = useState('');
   const [routeStops, setRouteStops] = useState<Array<{ stationId: string; sequence: number; arrivalMinute: number; departureMinute: number }>>([
     { stationId: '', sequence: 1, arrivalMinute: 0, departureMinute: 10 },
-    { stationId: '', sequence: 2, arrivalMinute: 300, departureMinute: 310 },
+    { stationId: '', sequence: 2, arrivalMinute: 180, departureMinute: 190 },
+    { stationId: '', sequence: 3, arrivalMinute: 360, departureMinute: 370 },
   ]);
+
+  const addRouteStop = () => {
+    setRouteStops((prev) => [
+      ...prev,
+      {
+        stationId: '',
+        sequence: prev.length + 1,
+        arrivalMinute: prev.length * 180,
+        departureMinute: prev.length * 180 + 10,
+      },
+    ]);
+  };
+
+  const removeRouteStop = (index: number) => {
+    if (routeStops.length <= 2) return;
+    setRouteStops((prev) =>
+      prev.filter((_, i) => i !== index).map((s, i) => ({ ...s, sequence: i + 1 }))
+    );
+  };
+
+  const resetRouteForm = () => {
+    setRouteTrainId('');
+    setRouteStops([
+      { stationId: '', sequence: 1, arrivalMinute: 0, departureMinute: 10 },
+      { stationId: '', sequence: 2, arrivalMinute: 180, departureMinute: 190 },
+      { stationId: '', sequence: 3, arrivalMinute: 360, departureMinute: 370 },
+    ]);
+  };
+
+  const handleSelectTrainForRoute = (trainId: string) => {
+    setRouteTrainId(trainId);
+    if (!trainId) {
+      resetRouteForm();
+      return;
+    }
+    const selectedTrain = trains.find((t) => t.id === trainId);
+    if (selectedTrain?.route?.stops && selectedTrain.route.stops.length > 0) {
+      const existingStops = selectedTrain.route.stops.map((stop: any, idx: number) => ({
+        stationId: stop.stationId,
+        sequence: stop.sequence || (idx + 1),
+        arrivalMinute: stop.arrivalMinute ?? 0,
+        departureMinute: stop.departureMinute ?? 0,
+      }));
+      setRouteStops(existingStops);
+    } else {
+      setRouteStops([
+        { stationId: '', sequence: 1, arrivalMinute: 0, departureMinute: 10 },
+        { stationId: '', sequence: 2, arrivalMinute: 180, departureMinute: 190 },
+        { stationId: '', sequence: 3, arrivalMinute: 360, departureMinute: 370 },
+      ]);
+    }
+  };
+
+  const addCoach = () => {
+    setCoachesInput((prev) => [
+      ...prev,
+      { coachNumber: `C${prev.length + 1}`, coachType: 'GENERAL', seatCount: 24 },
+    ]);
+  };
+
+  const removeCoach = (index: number) => {
+    if (coachesInput.length <= 1) return;
+    setCoachesInput((prev) => prev.filter((_, i) => i !== index));
+  };
 
   // Schedule Form
   const [schedTrainId, setSchedTrainId] = useState('');
@@ -49,10 +113,8 @@ export const AdminDashboard: React.FC = () => {
   const [fareTrainId, setFareTrainId] = useState('');
   const [fareFromStn, setFareFromStn] = useState('');
   const [fareToStn, setFareToStn] = useState('');
-  const [fare3A, setFare3A] = useState(1100);
-  const [fare2A, setFare2A] = useState(1600);
-  const [fare1A, setFare1A] = useState(2400);
-  const [fareSL, setFareSL] = useState(450);
+  const [fareGeneral, setFareGeneral] = useState(500);
+  const [fareFirstClass, setFareFirstClass] = useState(1800);
 
   const fetchAdminData = async () => {
     setLoading(true);
@@ -126,12 +188,12 @@ export const AdminDashboard: React.FC = () => {
     // Format coaches with seats
     const formattedCoaches = coachesInput.map((c) => {
       const seatsArr = [];
-      const types = ['LB', 'MB', 'UB', 'SL', 'SU'];
+      const types = ['LOWER', 'UPPER'];
       for (let i = 1; i <= c.seatCount; i++) {
         seatsArr.push({
           seatNumber: i,
           seatLabel: `${c.coachNumber}-${i}`,
-          seatType: types[(i - 1) % 5],
+          seatType: types[(i - 1) % 2],
         });
       }
       return {
@@ -173,14 +235,15 @@ export const AdminDashboard: React.FC = () => {
         stops: routeStops.map((s, idx) => ({
           stationId: s.stationId,
           sequence: idx + 1,
-          arrivalMinute: s.arrivalMinute,
-          departureMinute: s.departureMinute,
+          arrivalMinute: Number(s.arrivalMinute) || 0,
+          departureMinute: Number(s.departureMinute) || 0,
           arrivalDay: 1,
           departureDay: 1,
-          haltMinutes: 10,
+          haltMinutes: Math.max(0, (Number(s.departureMinute) || 0) - (Number(s.arrivalMinute) || 0)),
         })),
       });
-      setSuccessMsg('Train Route created successfully!');
+      setSuccessMsg('Train Route created / updated successfully!');
+      resetRouteForm();
       fetchAdminData();
     } catch (err: any) {
       setError(err.message || 'Failed to create route.');
@@ -199,10 +262,8 @@ export const AdminDashboard: React.FC = () => {
     }
 
     const faresList = [
-      { fromStationId: fareFromStn, toStationId: fareToStn, coachType: '3A', fare: Number(fare3A) },
-      { fromStationId: fareFromStn, toStationId: fareToStn, coachType: '2A', fare: Number(fare2A) },
-      { fromStationId: fareFromStn, toStationId: fareToStn, coachType: '1A', fare: Number(fare1A) },
-      { fromStationId: fareFromStn, toStationId: fareToStn, coachType: 'SL', fare: Number(fareSL) },
+      { fromStationId: fareFromStn, toStationId: fareToStn, coachType: 'GENERAL', fare: Number(fareGeneral) },
+      { fromStationId: fareFromStn, toStationId: fareToStn, coachType: 'FIRST_CLASS', fare: Number(fareFirstClass) },
     ];
 
     try {
@@ -418,7 +479,10 @@ export const AdminDashboard: React.FC = () => {
 
           {/* Stations List */}
           <div className="lg:col-span-7 bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
-            <h3 className="text-lg font-bold text-white mb-4">Existing Stations Database</h3>
+            <h3 className="text-lg font-bold text-white mb-4 flex items-center justify-between">
+              <span>All Railway Stations</span>
+              <span className="text-xs text-purple-400 font-semibold">{stations.length} Total</span>
+            </h3>
 
             {stations.length === 0 ? (
               <p className="text-sm text-slate-400 py-8 text-center">No stations added yet.</p>
@@ -482,10 +546,25 @@ export const AdminDashboard: React.FC = () => {
 
               {/* Coaches Config */}
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-2">Coach Configurations</label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-semibold text-slate-300">Coach Configurations</label>
+                  <button
+                    type="button"
+                    onClick={addCoach}
+                    className="px-2.5 py-1 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 text-xs font-semibold transition-all"
+                  >
+                    + Add Coach
+                  </button>
+                </div>
+                <div className="grid grid-cols-12 gap-2 text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1 px-3">
+                  <span className="col-span-3 text-center">Coach No</span>
+                  <span className="col-span-5">Coach Type</span>
+                  <span className="col-span-3 text-center">Seats Count</span>
+                  <span className="col-span-1"></span>
+                </div>
                 <div className="space-y-2">
                   {coachesInput.map((c, idx) => (
-                    <div key={idx} className="p-3 bg-slate-800/60 rounded-xl border border-slate-700/80 flex items-center gap-2 text-xs">
+                    <div key={idx} className="p-2.5 bg-slate-800/60 rounded-xl border border-slate-700/80 grid grid-cols-12 gap-2 text-xs items-center">
                       <input
                         type="text"
                         value={c.coachNumber}
@@ -494,7 +573,7 @@ export const AdminDashboard: React.FC = () => {
                           updated[idx].coachNumber = e.target.value;
                           setCoachesInput(updated);
                         }}
-                        className="w-16 px-2 py-1 bg-slate-900 border border-slate-700 rounded text-white font-mono"
+                        className="col-span-3 px-2 py-1.5 bg-slate-900 border border-slate-700 rounded text-white font-mono text-center font-bold"
                       />
 
                       <select
@@ -504,15 +583,12 @@ export const AdminDashboard: React.FC = () => {
                           updated[idx].coachType = e.target.value;
                           setCoachesInput(updated);
                         }}
-                        className="w-24 px-2 py-1 bg-slate-900 border border-slate-700 rounded text-white"
+                        className="col-span-5 px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded text-white"
                       >
-                        <option value="3A">3A</option>
-                        <option value="2A">2A</option>
-                        <option value="1A">1A</option>
-                        <option value="SL">SL</option>
+                        <option value="GENERAL">GENERAL</option>
+                        <option value="FIRST_CLASS">FIRST_CLASS</option>
                       </select>
 
-                      <span className="text-slate-400">Seats:</span>
                       <input
                         type="number"
                         min={6}
@@ -520,11 +596,24 @@ export const AdminDashboard: React.FC = () => {
                         value={c.seatCount}
                         onChange={(e) => {
                           const updated = [...coachesInput];
-                          updated[idx].seatCount = parseInt(e.target.value, 10);
+                          updated[idx].seatCount = parseInt(e.target.value, 10) || 24;
                           setCoachesInput(updated);
                         }}
-                        className="w-16 px-2 py-1 bg-slate-900 border border-slate-700 rounded text-white"
+                        className="col-span-3 px-2 py-1.5 bg-slate-900 border border-slate-700 rounded text-white font-mono text-center font-bold"
                       />
+
+                      <div className="col-span-1 text-center">
+                        {coachesInput.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removeCoach(idx)}
+                            className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded font-bold transition-colors"
+                            title="Remove Coach"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -569,77 +658,239 @@ export const AdminDashboard: React.FC = () => {
 
       {/* 3. Route Builder */}
       {activeSubTab === 'routes' && (
-        <div className="max-w-3xl mx-auto bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
-          <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-            <Layers className="w-5 h-5 text-purple-400" />
-            <span>Define Train Station Stops Route</span>
-          </h3>
-
-          <form onSubmit={handleCreateRoute} className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">Select Train</label>
-              <select
-                value={routeTrainId}
-                onChange={(e) => setRouteTrainId(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500"
-              >
-                <option value="">-- Choose Train --</option>
-                {trains.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} (#{t.trainNumber})
-                  </option>
-                ))}
-              </select>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          
+          {/* Route Editor Form (7 cols) */}
+          <div className="lg:col-span-7 bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <Layers className="w-5 h-5 text-purple-400" />
+                <span>{routeTrainId ? 'Edit Train Station Route' : 'Define Train Station Route'}</span>
+              </h3>
+              {routeTrainId && (
+                <button
+                  type="button"
+                  onClick={resetRouteForm}
+                  className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold"
+                >
+                  Clear Selection
+                </button>
+              )}
             </div>
 
-            {/* Stops array */}
-            <div className="space-y-3">
-              <label className="block text-xs font-semibold text-slate-300">Station Stops Sequence</label>
-              {routeStops.map((stop, idx) => (
-                <div key={idx} className="p-3 bg-slate-800/60 rounded-xl border border-slate-700/80 grid grid-cols-12 gap-2 text-xs items-center">
-                  <span className="col-span-1 font-bold text-purple-400">#{idx + 1}</span>
+            <form onSubmit={handleCreateRoute} className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">Select Train to Configure</label>
+                <select
+                  value={routeTrainId}
+                  onChange={(e) => handleSelectTrainForRoute(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500 font-semibold"
+                >
+                  <option value="">-- Choose Train --</option>
+                  {trains.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} (#{t.trainNumber}) {t.route?.stops?.length ? `[${t.route.stops.length} Stops Configured]` : '[No Route]'}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-                  <select
-                    value={stop.stationId}
-                    onChange={(e) => {
-                      const updated = [...routeStops];
-                      updated[idx].stationId = e.target.value;
-                      setRouteStops(updated);
-                    }}
-                    className="col-span-6 px-2 py-1.5 bg-slate-900 border border-slate-700 rounded text-white"
-                  >
-                    <option value="">Select Station</option>
-                    {stations.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} ({s.code})
-                      </option>
-                    ))}
-                  </select>
-
-                  <div className="col-span-5 flex items-center gap-1">
-                    <input
-                      type="number"
-                      placeholder="Dep Mins"
-                      value={stop.departureMinute}
-                      onChange={(e) => {
-                        const updated = [...routeStops];
-                        updated[idx].departureMinute = parseInt(e.target.value, 10);
-                        setRouteStops(updated);
-                      }}
-                      className="w-full px-2 py-1.5 bg-slate-900 border border-slate-700 rounded text-white"
-                    />
+              {/* Stops array */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300">Station Stops Sequence</label>
+                    <p className="text-[10px] text-slate-400">Time format: Minutes from midnight (e.g. 0 = 12:00 AM, 360 = 06:00 AM, 1200 = 08:00 PM)</p>
                   </div>
+                  <button
+                    type="button"
+                    onClick={addRouteStop}
+                    className="px-2.5 py-1 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 text-xs font-semibold transition-all"
+                  >
+                    + Add Station Stop
+                  </button>
                 </div>
-              ))}
-            </div>
 
-            <button
-              type="submit"
-              className="w-full py-3 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl text-xs shadow-lg shadow-purple-600/20 transition-all"
-            >
-              Save Route Stops
-            </button>
-          </form>
+                {/* Column Header Row */}
+                <div className="grid grid-cols-12 gap-2 text-[11px] font-bold text-purple-300 uppercase tracking-wider px-3 pt-1">
+                  <span className="col-span-1 text-center">Stop</span>
+                  <span className="col-span-6">Station Name & Code</span>
+                  <span className="col-span-2 text-center">Arr (Min)</span>
+                  <span className="col-span-2 text-center">Dep (Min)</span>
+                  <span className="col-span-1"></span>
+                </div>
+
+                <div className="space-y-1">
+                  {routeStops.map((stop, idx) => (
+                    <React.Fragment key={idx}>
+                      <div className="p-3 bg-slate-800/60 rounded-xl border border-slate-700/80 grid grid-cols-12 gap-2 text-xs items-center shadow-md">
+                        <div className="col-span-1 flex items-center justify-center">
+                          <span className="w-7 h-7 rounded-full bg-purple-500/20 border border-purple-500/40 text-purple-300 font-bold font-mono text-xs flex items-center justify-center shadow-inner">
+                            #{idx + 1}
+                          </span>
+                        </div>
+
+                        <select
+                          value={stop.stationId}
+                          onChange={(e) => {
+                            const updated = [...routeStops];
+                            updated[idx].stationId = e.target.value;
+                            setRouteStops(updated);
+                          }}
+                          className="col-span-6 px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs truncate focus:outline-none focus:border-purple-500"
+                        >
+                          <option value="">-- Select Station --</option>
+                          {stations.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name} ({s.code}) - {s.city}
+                            </option>
+                          ))}
+                        </select>
+
+                        <input
+                          type="number"
+                          placeholder="0"
+                          value={stop.arrivalMinute}
+                          onChange={(e) => {
+                            const updated = [...routeStops];
+                            updated[idx].arrivalMinute = parseInt(e.target.value, 10) || 0;
+                            setRouteStops(updated);
+                          }}
+                          className="col-span-2 px-2 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white text-center font-mono focus:outline-none focus:border-purple-500"
+                        />
+
+                        <input
+                          type="number"
+                          placeholder="10"
+                          value={stop.departureMinute}
+                          onChange={(e) => {
+                            const updated = [...routeStops];
+                            updated[idx].departureMinute = parseInt(e.target.value, 10) || 0;
+                            setRouteStops(updated);
+                          }}
+                          className="col-span-2 px-2 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white text-center font-mono focus:outline-none focus:border-purple-500"
+                        />
+
+                        <div className="col-span-1 text-center">
+                          {routeStops.length > 2 && (
+                            <button
+                              type="button"
+                              onClick={() => removeRouteStop(idx)}
+                              className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-lg font-bold transition-colors"
+                              title="Remove Stop"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Connecting Flow Arrow */}
+                      {idx < routeStops.length - 1 && (
+                        <div className="flex items-center justify-center py-1">
+                          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-slate-800/80 border border-slate-700/60 text-purple-400 text-xs font-semibold shadow-sm">
+                            <ArrowDown className="w-3.5 h-3.5 animate-bounce" />
+                            <span className="text-[10px] text-slate-400 uppercase tracking-widest font-mono">Train Route Flow</span>
+                          </div>
+                        </div>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="submit"
+                  className="flex-1 py-3 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl text-xs shadow-lg shadow-purple-600/20 transition-all"
+                >
+                  Save Train Route Stops
+                </button>
+                <button
+                  type="button"
+                  onClick={resetRouteForm}
+                  className="px-4 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl text-xs transition-all"
+                >
+                  Reset
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Configured Routes List (5 cols) */}
+          <div className="lg:col-span-5 bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
+            <h3 className="text-lg font-bold text-white mb-4 flex items-center justify-between">
+              <span>Train Route Timelines</span>
+              <span className="text-xs text-purple-400 font-semibold">{trains.filter((t) => t.route?.stops?.length).length} Configured</span>
+            </h3>
+
+            {trains.length === 0 ? (
+              <p className="text-sm text-slate-400 py-8 text-center">No trains registered.</p>
+            ) : (
+              <div className="space-y-4 max-h-[600px] overflow-y-auto pr-1">
+                {trains.map((t) => {
+                  const hasRoute = t.route?.stops && t.route.stops.length > 0;
+                  const stops = t.route?.stops || [];
+                  const originStn = stops[0]?.station?.code || 'START';
+                  const destStn = stops[stops.length - 1]?.station?.code || 'END';
+
+                  return (
+                    <div
+                      key={t.id}
+                      className={`p-4 rounded-xl border transition-all ${
+                        routeTrainId === t.id
+                          ? 'bg-purple-950/40 border-purple-500 shadow-lg shadow-purple-500/10'
+                          : 'bg-slate-800/50 border-slate-700/60 hover:border-slate-600'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <h4 className="font-bold text-white text-sm">{t.name}</h4>
+                          <span className="font-mono text-[11px] text-purple-300 font-bold">#{t.trainNumber}</span>
+                        </div>
+                        <button
+                          onClick={() => handleSelectTrainForRoute(t.id)}
+                          className="px-3 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500/30 text-purple-300 text-xs font-semibold transition-all"
+                        >
+                          {hasRoute ? 'Edit Route' : '+ Add Route'}
+                        </button>
+                      </div>
+
+                      {hasRoute ? (
+                        <div className="mt-3 pt-3 border-t border-slate-700/60 space-y-2">
+                          <div className="flex items-center justify-between text-xs text-slate-300">
+                            <span className="font-mono font-bold text-emerald-400">{originStn}</span>
+                            <span className="text-[10px] text-slate-400 font-medium">{stops.length} Station Stops</span>
+                            <span className="font-mono font-bold text-blue-400">{destStn}</span>
+                          </div>
+                          
+                          {/* Mini Stops Timeline */}
+                          <div className="flex items-center gap-1 overflow-x-auto py-1">
+                            {stops.map((st: any, sIdx: number) => (
+                              <React.Fragment key={st.id || sIdx}>
+                                <span
+                                  title={`${st.station?.name || st.stationId} (Arr: ${st.arrivalMinute}m, Dep: ${st.departureMinute}m)`}
+                                  className="px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-[10px] font-mono text-slate-300 shrink-0"
+                                >
+                                  {st.station?.code || `Stn-${sIdx+1}`}
+                                </span>
+                                {sIdx < stops.length - 1 && (
+                                  <span className="text-[10px] text-purple-400 font-bold">→</span>
+                                )}
+                              </React.Fragment>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-500 italic mt-2">No route stops configured yet.</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
         </div>
       )}
 
@@ -698,40 +949,22 @@ export const AdminDashboard: React.FC = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+            <div className="grid grid-cols-2 gap-3 pt-2">
               <div>
-                <label className="block text-xs text-slate-400 mb-1">3A Fare (₹)</label>
+                <label className="block text-xs text-slate-400 mb-1">GENERAL Fare (₹)</label>
                 <input
                   type="number"
-                  value={fare3A}
-                  onChange={(e) => setFare3A(parseInt(e.target.value, 10))}
+                  value={fareGeneral}
+                  onChange={(e) => setFareGeneral(parseInt(e.target.value, 10))}
                   className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white font-bold"
                 />
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">2A Fare (₹)</label>
+                <label className="block text-xs text-slate-400 mb-1">FIRST_CLASS Fare (₹)</label>
                 <input
                   type="number"
-                  value={fare2A}
-                  onChange={(e) => setFare2A(parseInt(e.target.value, 10))}
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white font-bold"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">1A Fare (₹)</label>
-                <input
-                  type="number"
-                  value={fare1A}
-                  onChange={(e) => setFare1A(parseInt(e.target.value, 10))}
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white font-bold"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">SL Fare (₹)</label>
-                <input
-                  type="number"
-                  value={fareSL}
-                  onChange={(e) => setFareSL(parseInt(e.target.value, 10))}
+                  value={fareFirstClass}
+                  onChange={(e) => setFareFirstClass(parseInt(e.target.value, 10))}
                   className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white font-bold"
                 />
               </div>

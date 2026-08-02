@@ -189,12 +189,12 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
 
                 {/* Coach Class Cards Grid */}
                 <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {['1A', '2A', '3A', 'SL'].map((cls) => {
+                  {['GENERAL', 'FIRST_CLASS', '3A', '2A', '1A', 'SL'].map((cls) => {
                     if (selectedClassFilter !== 'ALL' && selectedClassFilter !== cls) return null;
 
                     // Match fare or fallback
                     const fareObj = (t.fares || []).find((f: any) => f.coachType?.toUpperCase() === cls);
-                    const fareAmount = fareObj ? fareObj.fare : (cls === '1A' ? 2400 : cls === '2A' ? 1600 : cls === '3A' ? 1100 : 450);
+                    const fareAmount = fareObj ? fareObj.fare : (cls === 'FIRST_CLASS' ? 1800 : cls === 'GENERAL' ? 500 : 1100);
 
                     return (
                       <div
