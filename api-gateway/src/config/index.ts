@@ -5,7 +5,7 @@ import packageJson from "../../package.json" with { type: "json" };;
 
 export const config = {
     PORT: Number(process.env.PORT) || 4000,
-    ALLOWED_ORIGINS: "",
+    ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS || "",
     LOG_LEVEL: process.env.LOG_LEVEL || "info",
     SERVICE_NAME: packageJson.name,
     NODE_ENV: process.env.NODE_ENV || "development",

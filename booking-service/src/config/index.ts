@@ -10,7 +10,7 @@ export const config = {
     KAFKA_CLIENT_ID: process.env.KAFKA_CLIENT_ID || "",
     KAFKA_BROKER: process.env.KAFKA_BROKER || 'localhost:9093',
     ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS || "",
-    PORT: process.env.PORT || 4001,
+    PORT: process.env.PORT || 4004,
     BOOKING_TTL_SECONDS: Number(process.env.BOOKING_TTL_SECONDS) || 10 * 60,
     REDIS_URL: process.env.REDIS_URL || 'redis://localhost:6379',
     LOCK_TTL_SECONDS: Number(process.env.LOCK_TTL_SECONDS) || 10 * 60,
