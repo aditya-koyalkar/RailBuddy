@@ -99,7 +99,8 @@ const circuitBreakers: Record<string, CircuitBreaker> = {
     userService: new CircuitBreaker("user-service"),
     bookingService: new CircuitBreaker("booking-service"),
     searchService: new CircuitBreaker("search-service"),
-    adminService: new CircuitBreaker("admin-service")
+    adminService: new CircuitBreaker("admin-service"),
+    paymentService: new CircuitBreaker("payment-service")
 };
 
 interface ForwardResponse {
@@ -238,13 +239,14 @@ export function createProxy(
                 .split("/")
                 .filter(Boolean);
 
-            const servicePath =
-                "/api/v1/" + pathParts.slice(1).join("/");
+            const servicePrefix = serviceName === "paymentService" ? "/api/payment/" : "/api/v1/";
+            const servicePath = servicePrefix + pathParts.slice(1).join("/");
 
             const queryString = req.url.includes("?")
                 ? req.url.substring(req.url.indexOf("?"))
                 : "";
 
+            const requestBody = (req as any).rawBody || req.body;
 
             const result = await forwardRequest(
                 serviceUrl,
@@ -252,7 +254,7 @@ export function createProxy(
                 req.method,
                 req.method === "GET" || req.method === "DELETE"
                     ? undefined
-                    : req.body,
+                    : requestBody,
                 req.headers as Record<string, unknown>,
                 circuitBreaker
             );

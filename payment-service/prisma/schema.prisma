@@ -1,0 +1,97 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PaymentOrderStatus {
+  PENDING
+  PAID
+  FAILED
+  EXPIRED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentAuditAction {
+  CHECKOUT_CREATED
+  WEBHOOK_RECEIVED
+  PAYMENT_VERIFIED
+  PAYMENT_PAID
+  PAYMENT_FAILED
+  PAYMENT_EXPIRED
+  REFUND_INITIATED
+  REFUND_COMPLETED
+  REFUND_FAILED
+}
+
+model PaymentOrder {
+  id              String             @id @default(uuid())
+  bookingId       String             @unique
+  userId          String
+  amount          Decimal            @db.Decimal(10, 2)
+  currency        String             @default("usd")
+  status          PaymentOrderStatus @default(PENDING)
+  polarCheckoutId String?            @unique
+  polarOrderId    String?            @unique
+  checkoutUrl     String?
+  idempotencyKey  String             @unique
+  paidAt          DateTime?
+  refundId        String?
+  refundedAt      DateTime?
+  refundAmount    Decimal?           @db.Decimal(10, 2)
+  failureReason   String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  auditLogs       PaymentAuditLog[]
+
+  @@index([status])
+  @@index([userId])
+  @@map("payment_orders")
+}
+
+model PaymentAuditLog {
+  id             String              @id @default(uuid())
+  paymentOrderId String
+  bookingId      String
+  action         PaymentAuditAction
+  previousStatus PaymentOrderStatus?
+  newStatus      PaymentOrderStatus?
+  metadata       Json?
+  createdAt      DateTime            @default(now())
+
+  paymentOrder   PaymentOrder        @relation(fields: [paymentOrderId], references: [id], onDelete: Cascade)
+
+  @@index([paymentOrderId])
+  @@index([bookingId])
+  @@index([action])
+  @@map("payment_audit_logs")
+}
+
+model PaymentOutbox {
+  id            String    @id @default(uuid())
+  aggregateType String    @default("PaymentOrder")
+  aggregateId   String
+  eventType     String
+  payload       Json
+  processed     Boolean   @default(false)
+  processedAt   DateTime?
+  error         String?
+  createdAt     DateTime  @default(now())
+
+  @@index([processed, createdAt])
+  @@map("payment_outbox")
+}
+
+model IdempotencyRecord {
+  id          String   @id @default(uuid())
+  eventKey    String   @unique
+  response    Json?
+  processedAt DateTime @default(now())
+
+  @@map("idempotency_records")
+}

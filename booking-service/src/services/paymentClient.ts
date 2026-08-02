@@ -18,6 +18,25 @@ const paymentClient = {
             })
             return data.data;
         })
+    },
+    async verifyPayment(checkoutId: string, bookingId?: string) {
+        return withRetry(async () => {
+            const { data } = await client.post('/verify', {
+                checkoutId,
+                bookingId
+            });
+            return data.data;
+        })
+    },
+    async refundPayment(bookingId: string, amount?: number, reason?: string) {
+        return withRetry(async () => {
+            const { data } = await client.post('/refund', {
+                bookingId,
+                amount,
+                reason
+            });
+            return data.data;
+        })
     }
 }
 

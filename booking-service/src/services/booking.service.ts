@@ -2,9 +2,10 @@ import { config } from "../config"
 import { logger } from "../config/logger"
 import { prisma } from "../config/prisma"
 import { acquireSeatLocks, releaseSeatLocks } from "../utils/distributedLock"
-import { BadRequestError, ConflictError } from "../utils/error"
+import { BadRequestError, ConflictError, NotFoundError, ForbiddenError } from "../utils/error"
 import inventoryClient from "./inventoryClient"
 import adminClient from "./adminClient"
+import paymentClient from "./paymentClient"
 import sagaService from "./saga.service"
 
 const normalizeGender = (g: string) => {
@@ -225,7 +226,7 @@ const createBooking = async (
                 amount: paymentOrder.amount,
                 currency: paymentOrder.currency,
                 status: paymentOrder.status,
-                keyId: paymentOrder.keyId
+                checkoutUrl: paymentOrder.checkoutUrl
             },
         };
 
@@ -243,6 +244,7 @@ const createBooking = async (
         // Compensate on failure
         if (booking) {
             await sagaService.compensateAll(booking, sortedSeatIds);
+            // mark the created booking using transaction as failed
             await prisma.booking.update({
                 where: {
                     id: booking.id as string
@@ -287,4 +289,103 @@ async function saveIdenpotency(key: string, value: any) {
     })
 }
 
-export default { createBooking }
+async function cancelBooking(bookingId: string, userId: string, reason?: string) {
+    if (!bookingId || !userId) {
+        throw new BadRequestError("bookingId and userId are required");
+    }
+
+    const booking = await prisma.booking.findUnique({
+        where: { id: bookingId },
+        include: {
+            seatAssignments: true,
+            payment: true
+        }
+    });
+
+    if (!booking) {
+        throw new NotFoundError("Booking not found");
+    }
+
+    if (booking.userId !== userId) {
+        throw new ForbiddenError("You are not authorized to cancel this booking");
+    }
+
+    if (booking.status === "CANCELLED") {
+        logger.info(`Booking ${bookingId} is already CANCELLED`);
+        return booking;
+    }
+
+    if (booking.status === "FAILED" || booking.status === "EXPIRED") {
+        throw new BadRequestError(`Cannot cancel booking in ${booking.status} status`);
+    }
+
+    const seatIds = booking.seatAssignments.map((s) => s.seatId);
+
+    // Free seat segment reservations in inventory-service
+    try {
+        if (booking.status === "CONFIRMED") {
+            await inventoryClient.cancelBooking(
+                booking.scheduleId,
+                seatIds,
+                booking.userId,
+                booking.fromSequence,
+                booking.toSequence,
+                booking.id
+            );
+        } else {
+            await inventoryClient.releaseSeats(
+                booking.scheduleId,
+                seatIds,
+                booking.userId,
+                booking.fromSequence,
+                booking.toSequence,
+                booking.id
+            );
+        }
+    } catch (error: any) {
+        logger.error(`Error freeing inventory seats during cancellation for booking ${bookingId}`, { error: error.message });
+    }
+
+    // Process refund if payment was SUCCESS/PAID
+    const payment = booking.payment;
+    let refundResult = null;
+
+    if (payment && (payment.status === "SUCCESS" || payment.status === "PENDING")) {
+        try {
+            refundResult = await paymentClient.refundPayment(bookingId, Number(booking.totalFare), reason || "Customer requested cancellation");
+            logger.info(`Payment refund initiated for cancelled booking ${bookingId}`);
+        } catch (error: any) {
+            logger.error(`Error issuing payment refund for booking ${bookingId}`, { error: error.message });
+        }
+    }
+
+    // Update booking status to CANCELLED
+    const updatedBooking = await prisma.booking.update({
+        where: { id: bookingId },
+        data: {
+            status: "CANCELLED",
+            failureReason: reason || "Cancelled by user",
+            cancelledAt: new Date()
+        }
+    });
+
+    // Record CANCEL_SEATS saga step
+    await prisma.sagaLog.create({
+        data: {
+            bookingId,
+            step: "CANCEL_SEATS",
+            status: "COMPLETED",
+            response: {
+                cancelledAt: new Date(),
+                reason: reason || "Cancelled by user",
+                refundResult
+            }
+        }
+    });
+
+    logger.info(`Booking ${bookingId} successfully cancelled`);
+
+    return updatedBooking;
+}
+
+export default { createBooking, cancelBooking };

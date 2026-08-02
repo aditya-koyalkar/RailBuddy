@@ -33,6 +33,22 @@ const inventoryClient = {
             return data.data;
         })
     },
+    async confirmSeats(scheduleId: string, seatIds: string[], userId: string, fromSeq: number, toSeq: number, bookingId: string) {
+        return withRetry(async () => {
+            const { data } = await client.post('/seats/confirm', {
+                scheduleId, seatIds, userId, fromSeq, toSeq, bookingId
+            })
+            return data.data;
+        })
+    },
+    async cancelBooking(scheduleId: string, seatIds: string[], userId: string, fromSeq: number, toSeq: number, bookingId: string) {
+        return withRetry(async () => {
+            const { data } = await client.post('/seats/cancel', {
+                scheduleId, seatIds, userId, fromSeq, toSeq, bookingId
+            })
+            return data.data;
+        })
+    },
     async getSeatsByIds(scheduleId: string, seatIds: string[], fromSeq: number, toSeq: number): Promise<Array<{ seatId: string; coachId: string; coachNumber: string; coachType: string; seatNumber: number; seatLabel: string; seatType: string; segmentStatus: string }>> {
         return withRetry(async () => {
             const { data } = await client.get(`/schedules/${scheduleId}/seats`, {

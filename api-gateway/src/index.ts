@@ -15,8 +15,12 @@ const app = express();
 app.use(helmet());
 app.use(corsMiddleware);
 app.use(cookieParser());
-app.use(express.json())
-app.use(reqLogger)
+app.use(express.json({
+    verify: (req: any, _res, buf) => {
+        req.rawBody = buf;
+    }
+}));
+app.use(reqLogger);
 
 app.get('/health', (_req, res) => {
     res.status(200).json({

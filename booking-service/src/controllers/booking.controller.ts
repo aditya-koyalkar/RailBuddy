@@ -28,3 +28,21 @@ export const createBooking = asyncHandler(async (req, res) => {
         data: booking
     })
 })
+
+export const cancelBooking = asyncHandler(async (req, res) => {
+    const userId = req.user?.id;
+    const bookingId = req.params.id as string;
+    const { reason } = req.body;
+
+    if (!bookingId || !userId) {
+        throw new Error("bookingId and userId are required");
+    }
+
+    const booking = await bookingService.cancelBooking(bookingId, userId, reason);
+
+    return res.status(200).json({
+        success: true,
+        message: "Booking cancelled successfully",
+        data: booking
+    });
+});

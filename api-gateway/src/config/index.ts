@@ -19,4 +19,5 @@ export const config = {
     SERVICE_TIMEOUT_MS: parseInt(process.env.SERVICE_TIMEOUT_MS || '50000', 10),
     SEARCH_SERVICE_URL: process.env.SEARCH_SERVICE_URL || "",
     BOOKING_SERVICE_URL: process.env.BOOKING_SERVICE_URL || "http://localhost:4008",
+    PAYMENT_SERVICE_URL: process.env.PAYMENT_SERVICE_URL || "http://localhost:4005",
 }
