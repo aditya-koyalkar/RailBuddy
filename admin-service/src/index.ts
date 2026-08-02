@@ -8,6 +8,7 @@ import { logger } from "./config/logger.js";
 import { reqLogger } from "./middlewares/req.middleware.js";
 import stationRoutes from "./routes/station.route.js"
 import trainRoutes from "./routes/train.route.js"
+import { startAdminOutboxWorker } from "./services/outbox.service.js";
 
 const app = express();
 
@@ -33,6 +34,7 @@ const startServer = async () => {
         app.listen(config.PORT, () => {
             logger.info(`server running on PORT : ${config.PORT}`)
         })
+        startAdminOutboxWorker();
 
     } catch (error) {
         logger.error("Failed to start server", error)

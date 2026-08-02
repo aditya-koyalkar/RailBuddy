@@ -1,0 +1,10 @@
+{
+  "name": "railbuddy-root",
+  "version": "1.0.0",
+  "description": "RailBuddy Root Workspace to start all microservices",
+  "private": true,
+  "scripts": {
+    "dev": "npx concurrently -n \"gateway,user,booking,inventory,payment,search,notification,admin,frontend\" -c \"blue,green,magenta,cyan,yellow,red,blueBright,magentaBright,greenBright\" \"npm --prefix api-gateway run dev\" \"npm --prefix user-service run dev\" \"npm --prefix booking-service run dev\" \"npm --prefix inventory-service run dev\" \"npm --prefix payment-service run dev\" \"npm --prefix search-service run dev\" \"npm --prefix notification-service run dev\" \"npm --prefix admin-service run dev\" \"npm --prefix frontend run dev\"",
+    "dev:backend": "npx concurrently -n \"gateway,user,booking,inventory,payment,search,notification,admin\" -c \"blue,green,magenta,cyan,yellow,red,blueBright,magentaBright\" \"npm --prefix api-gateway run dev\" \"npm --prefix user-service run dev\" \"npm --prefix booking-service run dev\" \"npm --prefix inventory-service run dev\" \"npm --prefix payment-service run dev\" \"npm --prefix search-service run dev\" \"npm --prefix notification-service run dev\" \"npm --prefix admin-service run dev\""
+  }
+}

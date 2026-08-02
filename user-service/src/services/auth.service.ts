@@ -8,7 +8,6 @@ import jwt, { type JwtPayload } from "jsonwebtoken"
 import { redis } from "../config/redis.js";
 import { config } from "../config/index.js";
 import { OAuth2Client } from "google-auth-library";
-import notificationProducer from "../kafka/producer/notifications.producer.js";
 import { logger } from "../config/logger.js";
 
 const client = new OAuth2Client(config.GOOGLE_CLIENT_ID)
@@ -27,9 +26,19 @@ const sendOTP = async ({ firstName, lastName, email, password }: SendOTPParams) 
     const meta = { firstName, lastName, email, hashedPassword };
     const { otp, otpSessionId } = await generateAndStoreOTP(meta);
 
-    // await sendOTPEmail({ otp, email })
-    notificationProducer.sendOTPEmail(email, otp, (config.OTP_TTL) / 60)
-    logger.info(`OTP email queued for ${email}`)
+    await prisma.userOutbox.create({
+        data: {
+            aggregateType: "OTP",
+            aggregateId: email,
+            eventType: "OTP_EMAIL",
+            payload: {
+                email,
+                otp,
+                ttlMinutes: (config.OTP_TTL) / 60
+            }
+        }
+    });
+    logger.info(`OTP email outbox record created for ${email}`)
 
     return { otpSessionId }
 
@@ -40,18 +49,33 @@ const verifyOTPAndCreateUser = async (otp: string, otpSessionId: string) => {
     if (meta === null) {
         throw new BadRequestError("Invalid or Expired OTP", "OTP_INVALID")
     }
-    const user = await prisma.user.create({
-        data: {
-            email: meta.email,
-            firstName: meta.firstName,
-            lastName: meta.lastName,
-            emailVerified: true,
-            password: meta.hashedPassword,
-        }
-    })
 
-    // await sendVerificationSuccessfullEmail({ email: meta.email })
-    await notificationProducer.sendWelcomeEmail(meta.email, meta.firstName)
+    const user = await prisma.$transaction(async (tx) => {
+        const createdUser = await tx.user.create({
+            data: {
+                email: meta.email,
+                firstName: meta.firstName,
+                lastName: meta.lastName,
+                emailVerified: true,
+                password: meta.hashedPassword,
+            }
+        });
+
+        await tx.userOutbox.create({
+            data: {
+                aggregateType: "User",
+                aggregateId: createdUser.id,
+                eventType: "WELCOME_EMAIL",
+                payload: {
+                    email: meta.email,
+                    firstName: meta.firstName
+                }
+            }
+        });
+
+        return createdUser;
+    });
+
     return user;
 }
 

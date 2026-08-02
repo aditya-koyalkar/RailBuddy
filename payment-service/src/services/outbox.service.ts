@@ -29,6 +29,13 @@ export const processPaymentOutbox = async () => {
                         payload.orderId,
                         payload.reason
                     );
+                } else if (event.eventType === "PAYMENT_REFUNDED") {
+                    await paymentProducer.publishPaymentRefunded(
+                        payload.bookingId,
+                        payload.orderId,
+                        payload.refundId,
+                        payload.amount
+                    );
                 }
 
                 await prisma.paymentOutbox.update({
@@ -55,4 +62,11 @@ export const processPaymentOutbox = async () => {
     }
 };
 
-export default { processPaymentOutbox };
+export const startPaymentOutboxWorker = (intervalMs = 3000) => {
+    logger.info(`Starting Payment Outbox Worker (interval: ${intervalMs}ms)...`);
+    setInterval(async () => {
+        await processPaymentOutbox();
+    }, intervalMs);
+};
+
+export default { processPaymentOutbox, startPaymentOutboxWorker };

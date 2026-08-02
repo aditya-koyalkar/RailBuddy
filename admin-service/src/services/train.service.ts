@@ -1,6 +1,5 @@
 import { logger } from "../config/logger"
 import { prisma } from "../config/prisma"
-import { adminProducer } from "../kafka/producer/admin.producer"
 import { CreateRouteDTO } from "../types/create.route.type"
 import { CreateScheduleDTO } from "../types/create.schedule.type"
 import { CreateTrainDTO } from "../types/create.train.type"
@@ -54,33 +53,41 @@ const createTrain = async ({ trainNumber, name, coaches, fares }: CreateTrainDTO
         }
     }
 
-    const train = await prisma.train.create({
-        data: trainData,
-        include: {
-            coaches: {
-                include: {
-                    seats: {
-                        orderBy: {
-                            seatNumber: 'asc'
+    const train = await prisma.$transaction(async (tx) => {
+        const createdTrain = await tx.train.create({
+            data: trainData,
+            include: {
+                coaches: {
+                    include: {
+                        seats: {
+                            orderBy: {
+                                seatNumber: 'asc'
+                            }
                         }
+                    },
+                    orderBy: {
+                        coachNumber: 'asc'
                     }
                 },
-                orderBy: {
-                    coachNumber: 'asc'
-                }
-            },
-            fares: true
-        }
-    })
+                fares: true
+            }
+        });
 
-    logger.info("Train created successfully", { id: train.id, trainNumber: train.trainNumber })
+        await tx.adminOutbox.create({
+            data: {
+                aggregateType: "Train",
+                aggregateId: createdTrain.id,
+                eventType: "TRAIN_CREATED",
+                payload: createdTrain as any
+            }
+        });
 
-    await adminProducer.publishTrainCreated(train).catch((error) => {
-        logger.error('Failed to publish train create event', { error: error.message })
-    })
+        return createdTrain;
+    });
 
-    return train
+    logger.info("Train created successfully with outbox record", { id: train.id, trainNumber: train.trainNumber });
 
+    return train;
 }
 
 const createRoute = async (trainId: string, stops: CreateRouteDTO['stops']) => {
@@ -122,35 +129,6 @@ const createRoute = async (trainId: string, stops: CreateRouteDTO['stops']) => {
         }
     }
 
-    const route = await prisma.route.create({
-        data: {
-            trainId,
-            stops: {
-                create: stops.map((stop) => ({
-                    sequence: stop.sequence,
-                    arrivalDay: stop.arrivalDay ?? null,
-                    departureDay: stop.departureDay ?? null,
-                    arrivalMinute: stop.arrivalMinute ?? null,
-                    departureMinute: stop.departureMinute ?? null,
-                    haltMinutes: stop.haltMinutes ?? null,
-                    station: {
-                        connect: { id: stop.stationId }
-                    }
-                }))
-            }
-        },
-        include: {
-            stops: {
-                include: {
-                    station: true
-                },
-                orderBy: {
-                    sequence: 'asc'
-                }
-            }
-        }
-    })
-
     const trainWithCoachesAndSeats = await prisma.train.findUnique({
         where: { id: trainId },
         include: {
@@ -167,15 +145,53 @@ const createRoute = async (trainId: string, stops: CreateRouteDTO['stops']) => {
                 }
             }
         }
-    })
+    });
 
-    logger.info("Route created successfully", { id: route.id, trainId: route.trainId })
+    const route = await prisma.$transaction(async (tx) => {
+        const createdRoute = await tx.route.create({
+            data: {
+                trainId,
+                stops: {
+                    create: stops.map((stop) => ({
+                        sequence: stop.sequence,
+                        arrivalDay: stop.arrivalDay ?? null,
+                        departureDay: stop.departureDay ?? null,
+                        arrivalMinute: stop.arrivalMinute ?? null,
+                        departureMinute: stop.departureMinute ?? null,
+                        haltMinutes: stop.haltMinutes ?? null,
+                        station: {
+                            connect: { id: stop.stationId }
+                        }
+                    }))
+                }
+            },
+            include: {
+                stops: {
+                    include: {
+                        station: true
+                    },
+                    orderBy: {
+                        sequence: 'asc'
+                    }
+                }
+            }
+        });
 
-    await adminProducer.publishRouteCreated({ ...route, train: trainWithCoachesAndSeats! }).catch((error) => {
-        logger.error('Failed to publish route create event', { error: error.message })
-    })
+        await tx.adminOutbox.create({
+            data: {
+                aggregateType: "Route",
+                aggregateId: createdRoute.id,
+                eventType: "ROUTE_CREATED",
+                payload: { ...createdRoute, train: trainWithCoachesAndSeats! } as any
+            }
+        });
 
-    return route
+        return createdRoute;
+    });
+
+    logger.info("Route created successfully with outbox record", { id: route.id, trainId: route.trainId });
+
+    return route;
 }
 
 const getTrainById = async (trainId: string) => {
@@ -263,21 +279,33 @@ const createSchedule = async ({ trainId, departureDate, status }: CreateSchedule
         throw new ConflictError("Schedule for this train and date already exists")
     }
 
-    const schedule = await prisma.schedule.create({
-        data: {
-            trainId,
-            departureDate: date,
-            status
-        }
-    })
+    const schedule = await prisma.$transaction(async (tx) => {
+        const createdSchedule = await tx.schedule.create({
+            data: {
+                trainId,
+                departureDate: date,
+                status
+            }
+        });
 
-    logger.info("Schedule created successfully", { id: schedule.id, trainId: schedule.trainId })
+        await tx.adminOutbox.create({
+            data: {
+                aggregateType: "Schedule",
+                aggregateId: createdSchedule.id,
+                eventType: "SCHEDULE_CREATED",
+                payload: {
+                    schedule: createdSchedule,
+                    train
+                } as any
+            }
+        });
 
-    await adminProducer.publishScheduleCreated(schedule, train).catch((error) => {
-        logger.error('Failed to publish schedule create event', { error: error.message })
-    })
+        return createdSchedule;
+    });
 
-    return schedule
+    logger.info("Schedule created successfully with outbox record", { id: schedule.id, trainId: schedule.trainId });
+
+    return schedule;
 }
 
 const createFares = async (trainId: string, fares: Array<{ fromStationId: string; toStationId: string; coachType: any; fare: number }>) => {

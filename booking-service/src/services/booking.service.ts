@@ -174,6 +174,22 @@ const createBooking = async (
                 data: seatAssignmentsData
             });
 
+            await tx.bookingOutbox.create({
+                data: {
+                    aggregateId: created.id,
+                    eventType: "BOOKING_CREATED",
+                    payload: {
+                        bookingId: created.id,
+                        pnr: created.pnr,
+                        userId: created.userId,
+                        scheduleId: created.scheduleId,
+                        trainId: created.trainId,
+                        totalFare: Number(created.totalFare),
+                        status: created.status
+                    } as any
+                }
+            });
+
             return created;
         });
 
@@ -359,14 +375,31 @@ async function cancelBooking(bookingId: string, userId: string, reason?: string)
         }
     }
 
-    // Update booking status to CANCELLED
-    const updatedBooking = await prisma.booking.update({
-        where: { id: bookingId },
-        data: {
-            status: "CANCELLED",
-            failureReason: reason || "Cancelled by user",
-            cancelledAt: new Date()
-        }
+    // Update booking status to CANCELLED and create outbox event
+    const updatedBooking = await prisma.$transaction(async (tx) => {
+        const b = await tx.booking.update({
+            where: { id: bookingId },
+            data: {
+                status: "CANCELLED",
+                failureReason: reason || "Cancelled by user",
+                cancelledAt: new Date()
+            }
+        });
+
+        await tx.bookingOutbox.create({
+            data: {
+                aggregateId: bookingId,
+                eventType: "BOOKING_CANCELLED",
+                payload: {
+                    bookingId,
+                    pnr: b.pnr,
+                    userId: b.userId,
+                    reason: reason || "Cancelled by user"
+                } as any
+            }
+        });
+
+        return b;
     });
 
     // Record CANCEL_SEATS saga step

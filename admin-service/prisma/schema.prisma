@@ -196,3 +196,19 @@ model Fare {
   @@index([trainId])
   @@map("fares")
 }
+
+model AdminOutbox {
+  id            String    @id @default(uuid())
+  aggregateType String
+  aggregateId   String
+  eventType     String
+  payload       Json
+  published     Boolean   @default(false)
+  publishedAt   DateTime?
+  error         String?
+  createdAt     DateTime  @default(now())
+
+  @@index([published, createdAt])
+  @@map("admin_outbox")
+}
+

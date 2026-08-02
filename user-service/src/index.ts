@@ -8,6 +8,7 @@ import { corsMiddleware } from "./middlewares/cors.middleware.js";
 import { logger } from "./config/logger.js";
 import authRoutes from "./routes/auth.route.js";
 import userRoutes from "./routes/user.route.js";
+import { startUserOutboxWorker } from "./services/outbox.service.js";
 
 const app = express();
 
@@ -32,6 +33,7 @@ const startServer = async () => {
         app.listen(config.PORT, () => {
             logger.info(`server running on PORT : ${config.PORT}`)
         })
+        startUserOutboxWorker();
 
     } catch (error) {
         logger.error("Failed to start server", error)

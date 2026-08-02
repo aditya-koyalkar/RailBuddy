@@ -6,8 +6,9 @@ import { errorHandler } from "./middlewares/error.middleware.js";
 import { corsMiddleware } from "./middlewares/cors.middleware.js";
 import { logger } from "./config/logger.js";
 import { reqLogger } from "./middlewares/req.middleware.js";
-import inventoryConsumer from "./kafka/consumer/booking.consumer.js";
+import bookingConsumer from "./kafka/consumer/booking.consumer.js";
 import bookingRoutes from "./routes/booking.route.js";
+import { startBookingOutboxWorker } from "./services/outbox.service.js";
 
 const app = express();
 
@@ -33,10 +34,10 @@ const startServer = async () => {
         app.listen(config.PORT, () => {
             logger.info(`server running on PORT : ${config.PORT}`)
         })
-        await inventoryConsumer.start();
+        await bookingConsumer.start();
+        logger.info("Booking Consumer started");
 
-        logger.info("Inventory Consumer started");
-
+        startBookingOutboxWorker();
 
     } catch (error) {
         logger.error("Failed to start server", error)

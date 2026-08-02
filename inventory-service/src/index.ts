@@ -8,6 +8,7 @@ import { logger } from "./config/logger.js";
 import { reqLogger } from "./middlewares/req.middleware.js";
 import inventoryConsumer from "./kafka/consumer/inventory.consumer.js";
 import inventoryRoutes from "./routes/inventory.route.js";
+import { startInventoryOutboxWorker } from "./services/outbox.service.js";
 
 const app = express();
 
@@ -34,9 +35,9 @@ const startServer = async () => {
             logger.info(`server running on PORT : ${config.PORT}`)
         })
         await inventoryConsumer.start();
-
         logger.info("Inventory Consumer started");
 
+        startInventoryOutboxWorker();
 
     } catch (error) {
         logger.error("Failed to start server", error)

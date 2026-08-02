@@ -36,3 +36,18 @@ model AuthProvider {
   @@unique([userId, provider])
   @@index([userId])
 }
+
+model UserOutbox {
+  id            String    @id @default(uuid())
+  aggregateType String
+  aggregateId   String
+  eventType     String
+  payload       Json
+  published     Boolean   @default(false)
+  publishedAt   DateTime?
+  error         String?
+  createdAt     DateTime  @default(now())
+
+  @@index([published, createdAt])
+  @@map("user_outbox")
+}

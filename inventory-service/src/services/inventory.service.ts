@@ -2,7 +2,6 @@ import { Prisma } from "@prisma/client";
 import { config } from "../config/index.js";
 import { logger } from "../config/logger.js";
 import { prisma } from "../config/prisma.js";
-import inventoryProducer from "../kafka/producer/inventory.producer.js";
 import { BadRequestError, ConflictError, NotFoundError } from "../utils/error.js";
 import { retryTransaction } from "../utils/retryTransaction.js";
 
@@ -127,16 +126,24 @@ const initializeInventory = async (eventData: any) => {
                 eventKey: eventKey
             }
         });
+
+        await tx.inventoryOutbox.create({
+            data: {
+                aggregateType: "ScheduleInventory",
+                aggregateId: scheduleId,
+                eventType: "SeatAvailabilityChanged",
+                payload: {
+                    scheduleId,
+                    trainId,
+                    totalSeats,
+                    lockedSeats: 0,
+                    bookedSeats: 0
+                }
+            }
+        });
     });
 
-    logger.info(`Inventory initialized successfully for schedule ${scheduleId}`);
-
-    try {
-        await inventoryProducer.publishSeatAvailabilityUpdated(scheduleId, trainId, totalSeats, 0, 0);
-    }
-    catch (e) {
-        logger.error(`Failed to publish seat availability update for schedule ${scheduleId}: ${e}`);
-    }
+    logger.info(`Inventory initialized successfully with outbox record for schedule ${scheduleId}`);
 }
 
 const cancelSheduleInventory = async (eventData: any) => {
@@ -186,20 +193,21 @@ const cancelSheduleInventory = async (eventData: any) => {
                 eventKey: eventKey
             }
         });
+
+        await tx.inventoryOutbox.create({
+            data: {
+                aggregateType: "ScheduleInventory",
+                aggregateId: scheduleId,
+                eventType: "SeatAvailabilityChanged",
+                payload: {
+                    scheduleId,
+                    trainId
+                }
+            }
+        });
     });
 
-    logger.info(`Inventory cancelled successfully for schedule ${scheduleId}`);
-
-    const schedule = await prisma.scheduleInventory.findUnique({
-        where: { scheduleId }
-    })
-
-    try {
-        await inventoryProducer.publishSeatAvailabilityUpdated(scheduleId, trainId, schedule?.totalSeats || 0, 0, 0);
-    }
-    catch (e) {
-        logger.error(`Failed to publish seat availability update for schedule ${scheduleId}: ${e}`);
-    }
+    logger.info(`Inventory cancelled successfully with outbox record for schedule ${scheduleId}`);
 }
 
 export const getAvailability = async (scheduleId: string, fromSeq?: number, toSeq?: number) => {

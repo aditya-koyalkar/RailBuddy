@@ -121,23 +121,37 @@ class BookingConsumer {
             throw error;
         }
 
-        // Update booking status to CONFIRMED
-        await prisma.booking.update({
-            where: { id: bookingId },
-            data: {
-                status: "CONFIRMED",
-                confirmedAt: new Date()
-            }
-        });
+        // Update booking status to CONFIRMED, update payment, and write outbox event
+        await prisma.$transaction(async (tx) => {
+            const confirmedBooking = await tx.booking.update({
+                where: { id: bookingId },
+                data: {
+                    status: "CONFIRMED",
+                    confirmedAt: new Date()
+                }
+            });
 
-        // Update payment status to SUCCESS
-        await prisma.payment.updateMany({
-            where: { bookingId },
-            data: {
-                status: "SUCCESS",
-                transactionId: orderId,
-                paidAt: new Date()
-            }
+            await tx.payment.updateMany({
+                where: { bookingId },
+                data: {
+                    status: "SUCCESS",
+                    transactionId: orderId,
+                    paidAt: new Date()
+                }
+            });
+
+            await tx.bookingOutbox.create({
+                data: {
+                    aggregateId: bookingId,
+                    eventType: "BOOKING_CONFIRMED",
+                    payload: {
+                        bookingId,
+                        pnr: confirmedBooking.pnr,
+                        userId: confirmedBooking.userId,
+                        confirmedAt: confirmedBooking.confirmedAt
+                    } as any
+                }
+            });
         });
 
         // Record COMPLETE saga step
@@ -186,21 +200,35 @@ class BookingConsumer {
             logger.error(`Failed to compensate saga steps for booking ${bookingId}`, { error: error.message });
         }
 
-        // Update booking status to FAILED
-        await prisma.booking.update({
-            where: { id: bookingId },
-            data: {
-                status: "FAILED",
-                failureReason: reason || "Payment failed or expired on checkout"
-            }
-        });
+        // Update booking status to FAILED, update payment status, and write outbox event
+        await prisma.$transaction(async (tx) => {
+            const failedBooking = await tx.booking.update({
+                where: { id: bookingId },
+                data: {
+                    status: "FAILED",
+                    failureReason: reason || "Payment failed or expired on checkout"
+                }
+            });
 
-        // Update payment status to FAILED
-        await prisma.payment.updateMany({
-            where: { bookingId },
-            data: {
-                status: "FAILED"
-            }
+            await tx.payment.updateMany({
+                where: { bookingId },
+                data: {
+                    status: "FAILED"
+                }
+            });
+
+            await tx.bookingOutbox.create({
+                data: {
+                    aggregateId: bookingId,
+                    eventType: "BOOKING_FAILED",
+                    payload: {
+                        bookingId,
+                        pnr: failedBooking.pnr,
+                        userId: failedBooking.userId,
+                        reason: failedBooking.failureReason
+                    } as any
+                }
+            });
         });
 
         logger.info(`Booking ${bookingId} marked as FAILED following payment failure notification`);

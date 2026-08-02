@@ -234,3 +234,18 @@ model IdempotencyRecord {
   @@index([key])
   @@map("idempotency_records")
 }
+
+model BookingOutbox {
+  id            String    @id @default(uuid())
+  aggregateType String    @default("Booking")
+  aggregateId   String
+  eventType     String
+  payload       Json
+  published     Boolean   @default(false)
+  publishedAt   DateTime?
+  error         String?
+  createdAt     DateTime  @default(now())
+
+  @@index([published, createdAt])
+  @@map("booking_outbox")
+}

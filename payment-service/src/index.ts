@@ -8,6 +8,7 @@ import { logger } from "./config/logger.js";
 import { reqLogger } from "./middlewares/req.middleware.js";
 import paymentRoutes from "./routes/payment.route.js";
 import paymentProducer from "./kafka/producer/payment.producer.js";
+import { startPaymentOutboxWorker } from "./services/outbox.service.js";
 
 const app = express();
 
@@ -34,6 +35,8 @@ const startServer = async () => {
     try {
         await paymentProducer.initialize();
         logger.info("Payment Producer initialized");
+
+        startPaymentOutboxWorker();
 
         app.listen(config.PORT, () => {
             logger.info(`Payment service running on PORT: ${config.PORT}`);

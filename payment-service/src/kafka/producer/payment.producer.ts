@@ -72,6 +72,23 @@ class PaymentProducer {
             payload
         );
     }
+
+    async publishPaymentRefunded(bookingId: string, orderId: string, refundId: string, amount: number) {
+        const payload = {
+            bookingId,
+            orderId,
+            refundId,
+            amount,
+            status: "REFUNDED",
+            timestamp: Date.now()
+        };
+
+        return this.sendMessage(
+            TOPICS.PAYMENT_REFUNDED,
+            `PAYMENT_REFUNDED:${bookingId}`,
+            payload
+        );
+    }
 }
 
 export default new PaymentProducer();
