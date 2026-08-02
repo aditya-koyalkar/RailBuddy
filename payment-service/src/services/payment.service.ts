@@ -155,17 +155,27 @@ export const handleOrderPaid = async (polarOrderId: string, checkoutId?: string,
     const previousStatus = order.status;
 
     // Atomic database transaction with in-memory retries: Update status + Audit Log + Outbox record
-    // Configured with 3 retries on all retry fails throws error making polar to send webhook again
     await retryTransaction(async () => {
         return await prisma.$transaction(async (tx) => {
-            const updatedOrder = await tx.paymentOrder.update({
-                where: { id: order.id },
+            const updateResult = await tx.paymentOrder.updateMany({
+                where: {
+                    id: order.id,
+                    version: order.version
+                },
                 data: {
                     status: "PAID",
                     polarOrderId,
-                    paidAt: new Date()
+                    paidAt: new Date(),
+                    version: { increment: 1 }
                 }
             });
+
+            if (updateResult.count === 0) {
+                logger.info(`Payment order ${order.id} update skipped due to concurrent modification (version mismatch)`);
+                return;
+            }
+
+            const updatedOrder = await tx.paymentOrder.findUniqueOrThrow({ where: { id: order.id } });
 
             await tx.paymentAuditLog.create({
                 data: {
@@ -177,7 +187,8 @@ export const handleOrderPaid = async (polarOrderId: string, checkoutId?: string,
                     metadata: {
                         polarOrderId,
                         checkoutId,
-                        paidAt: updatedOrder.paidAt
+                        paidAt: updatedOrder.paidAt,
+                        version: updatedOrder.version
                     }
                 }
             });
@@ -242,13 +253,24 @@ export const handleOrderFailed = async (polarOrderId?: string, checkoutId?: stri
     // Atomic database transaction with in-memory retries: Update status + Audit Log + Outbox record
     await retryTransaction(async () => {
         return await prisma.$transaction(async (tx) => {
-            const updatedOrder = await tx.paymentOrder.update({
-                where: { id: order.id },
+            const updateResult = await tx.paymentOrder.updateMany({
+                where: {
+                    id: order.id,
+                    version: order.version
+                },
                 data: {
                     status: newStatus,
-                    failureReason
+                    failureReason,
+                    version: { increment: 1 }
                 }
             });
+
+            if (updateResult.count === 0) {
+                logger.info(`Payment order ${order.id} failure update skipped due to concurrent modification (version mismatch)`);
+                return;
+            }
+
+            const updatedOrder = await tx.paymentOrder.findUniqueOrThrow({ where: { id: order.id } });
 
             await tx.paymentAuditLog.create({
                 data: {
@@ -381,15 +403,26 @@ export const refundPaymentOrder = async (bookingId: string, amount?: number, rea
     // Atomic transaction with in-memory retries: Update status to REFUNDED + Audit Log + Outbox Event
     await retryTransaction(async () => {
         return await prisma.$transaction(async (tx) => {
-            const updatedOrder = await tx.paymentOrder.update({
-                where: { id: order.id },
+            const updateResult = await tx.paymentOrder.updateMany({
+                where: {
+                    id: order.id,
+                    version: order.version
+                },
                 data: {
                     status: "REFUNDED",
                     refundId,
                     refundedAt: new Date(),
-                    refundAmount
+                    refundAmount,
+                    version: { increment: 1 }
                 }
             });
+
+            if (updateResult.count === 0) {
+                logger.info(`Payment order ${order.id} refund update skipped due to concurrent modification (version mismatch)`);
+                return;
+            }
+
+            const updatedOrder = await tx.paymentOrder.findUniqueOrThrow({ where: { id: order.id } });
 
             await tx.paymentAuditLog.create({
                 data: {
