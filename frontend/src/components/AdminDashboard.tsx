@@ -261,6 +261,22 @@ export const AdminDashboard: React.FC = () => {
       return;
     }
 
+    if (fareFromStn === fareToStn) {
+      setError('Origin and Destination stations cannot be the same station.');
+      return;
+    }
+
+    const selectedTrain = trains.find((t) => t.id === fareTrainId);
+    const stops = selectedTrain?.route?.stops || [];
+    if (stops.length > 0) {
+      const fromStop = stops.find((s: any) => s.stationId === fareFromStn);
+      const toStop = stops.find((s: any) => s.stationId === fareToStn);
+      if (fromStop && toStop && fromStop.sequence >= toStop.sequence) {
+        setError(`Invalid direction! Fares can only follow the forward train route flow (Stop #${fromStop.sequence} → Stop #${toStop.sequence} is invalid).`);
+        return;
+      }
+    }
+
     const faresList = [
       { fromStationId: fareFromStn, toStationId: fareToStn, coachType: 'GENERAL', fare: Number(fareGeneral) },
       { fromStationId: fareFromStn, toStationId: fareToStn, coachType: 'FIRST_CLASS', fare: Number(fareFirstClass) },
@@ -271,7 +287,11 @@ export const AdminDashboard: React.FC = () => {
         trainId: fareTrainId,
         fares: faresList,
       });
-      setSuccessMsg('Train fares initialized successfully!');
+      setSuccessMsg('Train fares saved successfully!');
+      setFareFromStn('');
+      setFareToStn('');
+      setFareGeneral(150);
+      setFareFirstClass(350);
       fetchAdminData();
     } catch (err: any) {
       setError(err.message || 'Failed to initialize fares.');
@@ -284,8 +304,24 @@ export const AdminDashboard: React.FC = () => {
     setError(null);
     setSuccessMsg(null);
 
-    if (!schedTrainId) {
-      setError('Please select a train to schedule');
+    if (!schedTrainId || !schedDepartureDate) {
+      setError('Please select a train and departure date');
+      return;
+    }
+
+    const selectedTrain = trains.find((t) => t.id === schedTrainId);
+    if (!selectedTrain?.route?.stops || selectedTrain.route.stops.length === 0) {
+      setError(`Cannot schedule ${selectedTrain?.name || 'train'}: Train has no route stops configured. Please define a route in the Route Builder first.`);
+      return;
+    }
+
+    const isAlreadyScheduled = selectedTrain.schedules?.some((sch: any) => {
+      const existingDate = new Date(sch.departureDate).toISOString().split('T')[0];
+      return existingDate === schedDepartureDate;
+    });
+
+    if (isAlreadyScheduled) {
+      setError(`Schedule for ${selectedTrain.name} on date ${schedDepartureDate} already exists! Multiple schedules on the same day are prohibited.`);
       return;
     }
 
@@ -295,7 +331,7 @@ export const AdminDashboard: React.FC = () => {
         departureDate: schedDepartureDate,
         status: 'ACTIVE',
       });
-      setSuccessMsg(`Train schedule created for date ${schedDepartureDate}! Outbox events triggered.`);
+      setSuccessMsg(`Active schedule created for ${selectedTrain.name} on ${schedDepartureDate}! Outbox event triggered.`);
       fetchAdminData();
     } catch (err: any) {
       setError(err.message || 'Failed to create schedule.');
@@ -895,136 +931,446 @@ export const AdminDashboard: React.FC = () => {
       )}
 
       {/* 4. Fare Matrix */}
-      {activeSubTab === 'fares' && (
-        <div className="max-w-3xl mx-auto bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
-          <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-            <DollarSign className="w-5 h-5 text-emerald-400" />
-            <span>Setup Coach Fares Between Station Pair</span>
-          </h3>
+      {activeSubTab === 'fares' && (() => {
+        const selectedTrain = trains.find((t) => t.id === fareTrainId);
+        
+        // Derive route stations if train route exists, else fallback to all stations
+        const routeStops = selectedTrain?.route?.stops || [];
+        const trainRouteStations = routeStops.length > 0
+          ? routeStops
+              .map((st: any) => st.station || stations.find((s) => s.id === st.stationId))
+              .filter(Boolean)
+          : stations;
 
-          <form onSubmit={handleCreateFares} className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">Select Train</label>
-              <select
-                value={fareTrainId}
-                onChange={(e) => setFareTrainId(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500"
-              >
-                <option value="">-- Choose Train --</option>
-                {trains.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} (#{t.trainNumber})
-                  </option>
-                ))}
-              </select>
+        // Group fares by (fromStationId, toStationId)
+        const faresMap: Record<string, { fromStn: any; toStn: any; general?: number; firstClass?: number }> = {};
+        if (selectedTrain?.fares) {
+          selectedTrain.fares.forEach((f: any) => {
+            const key = `${f.fromStationId}_${f.toStationId}`;
+            if (!faresMap[key]) {
+              const fromS = stations.find((s) => s.id === f.fromStationId);
+              const toS = stations.find((s) => s.id === f.toStationId);
+              faresMap[key] = { fromStn: fromS, toStn: toS };
+            }
+            if (f.coachType === 'GENERAL') faresMap[key].general = f.fare;
+            if (f.coachType === 'FIRST_CLASS') faresMap[key].firstClass = f.fare;
+          });
+        }
+
+        const farePairsList = Object.entries(faresMap);
+
+        return (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            
+            {/* Left Panel: Fare Setup Form (6 cols) */}
+            <div className="lg:col-span-6 bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
+              <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                <DollarSign className="w-5 h-5 text-emerald-400" />
+                <span>Configure Coach Fares Matrix</span>
+              </h3>
+
+              <form onSubmit={handleCreateFares} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">Select Train</label>
+                  <select
+                    value={fareTrainId}
+                    onChange={(e) => {
+                      setFareTrainId(e.target.value);
+                      setFareFromStn('');
+                      setFareToStn('');
+                    }}
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500 font-semibold"
+                  >
+                    <option value="">-- Choose Train --</option>
+                    {trains.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} (#{t.trainNumber}) {t.fares?.length ? `[${t.fares.length} Fares Configured]` : '[No Fares]'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {fareTrainId && routeStops.length === 0 && (
+                  <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[11px] flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span>This train has no route stops configured. Showing all registered stations.</span>
+                  </div>
+                )}
+
+                {(() => {
+                  const fromStop = routeStops.find((st: any) => st.stationId === fareFromStn);
+                  const validToStations = fareFromStn && routeStops.length > 0
+                    ? trainRouteStations.filter((s: any) => {
+                        if (s.id === fareFromStn) return false;
+                        const toStop = routeStops.find((st: any) => st.stationId === s.id);
+                        return !fromStop || !toStop || toStop.sequence > fromStop.sequence;
+                      })
+                    : trainRouteStations.filter((s: any) => s.id !== fareFromStn);
+
+                  return (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-slate-300 mb-1">From Station (Origin)</label>
+                        <select
+                          value={fareFromStn}
+                          onChange={(e) => {
+                            setFareFromStn(e.target.value);
+                            setFareToStn('');
+                          }}
+                          className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white"
+                        >
+                          <option value="">Select Origin Station</option>
+                          {trainRouteStations.map((s: any) => {
+                            const stop = routeStops.find((st: any) => st.stationId === s.id);
+                            return (
+                              <option key={s.id} value={s.id}>
+                                {stop ? `#${stop.sequence} - ` : ''}{s.name} ({s.code})
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-slate-300 mb-1">To Station (Destination)</label>
+                        <select
+                          value={fareToStn}
+                          onChange={(e) => setFareToStn(e.target.value)}
+                          disabled={!fareFromStn}
+                          className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white disabled:opacity-50"
+                        >
+                          <option value="">
+                            {!fareFromStn ? 'Select Origin First' : 'Select Destination Station'}
+                          </option>
+                          {validToStations.map((s: any) => {
+                            const stop = routeStops.find((st: any) => st.stationId === s.id);
+                            return (
+                              <option key={s.id} value={s.id}>
+                                {stop ? `#${stop.sequence} - ` : ''}{s.name} ({s.code})
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {(() => {
+                  const isDuplicatePair = selectedTrain?.fares?.some(
+                    (f: any) => f.fromStationId === fareFromStn && f.toStationId === fareToStn
+                  );
+                  const isInvalid = !fareTrainId || !fareFromStn || !fareToStn || fareFromStn === fareToStn || fareGeneral < 0 || fareFirstClass < 0;
+
+                  return (
+                    <>
+                      {fareFromStn && fareToStn && isDuplicatePair && (
+                        <div className="p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs flex items-center justify-between font-medium">
+                          <span>Editing existing fare rule for selected stations.</span>
+                          <span className="font-mono text-[10px] bg-purple-500/20 px-2 py-0.5 rounded font-bold">MODE: UPDATE</span>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-2 gap-3 pt-1">
+                        <div>
+                          <label className="block text-xs text-slate-400 mb-1">GENERAL Fare (₹)</label>
+                          <input
+                            type="number"
+                            value={fareGeneral}
+                            onChange={(e) => setFareGeneral(parseInt(e.target.value, 10) || 0)}
+                            className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white font-mono font-bold"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-slate-400 mb-1">FIRST_CLASS Fare (₹)</label>
+                          <input
+                            type="number"
+                            value={fareFirstClass}
+                            onChange={(e) => setFareFirstClass(parseInt(e.target.value, 10) || 0)}
+                            className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white font-mono font-bold"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 pt-2">
+                        <button
+                          type="submit"
+                          disabled={isInvalid}
+                          className={`flex-1 py-3 font-bold rounded-xl text-xs transition-all ${
+                            isInvalid
+                              ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/50'
+                              : isDuplicatePair
+                              ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20'
+                              : 'bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-600/20'
+                          }`}
+                        >
+                          {isInvalid
+                            ? 'Fill All Required Fields'
+                            : isDuplicatePair
+                            ? 'Update Existing Fares'
+                            : 'Save Coach Fares'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFareFromStn('');
+                            setFareToStn('');
+                            setFareGeneral(150);
+                            setFareFirstClass(350);
+                          }}
+                          className="px-4 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl text-xs transition-all"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </>
+                  );
+                })()}
+              </form>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">From Station</label>
-                <select
-                  value={fareFromStn}
-                  onChange={(e) => setFareFromStn(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white"
-                >
-                  <option value="">Select Station</option>
-                  {stations.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
-                  ))}
-                </select>
-              </div>
+            {/* Right Panel: Live Fares Table for Selected Train (6 cols) */}
+            <div className="lg:col-span-6 bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
+              <h3 className="text-lg font-bold text-white mb-4 flex items-center justify-between">
+                <span>
+                  {selectedTrain ? `Fares Matrix: ${selectedTrain.name}` : 'Current Fares Matrix'}
+                </span>
+                {selectedTrain && (
+                  <span className="text-xs text-emerald-400 font-mono font-bold">
+                    #{selectedTrain.trainNumber}
+                  </span>
+                )}
+              </h3>
 
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">To Station</label>
-                <select
-                  value={fareToStn}
-                  onChange={(e) => setFareToStn(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white"
-                >
-                  <option value="">Select Station</option>
-                  {stations.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
-                  ))}
-                </select>
-              </div>
+              {!fareTrainId ? (
+                <div className="py-12 text-center text-slate-400 text-sm">
+                  <DollarSign className="w-10 h-10 text-slate-600 mx-auto mb-2 opacity-50" />
+                  <p>Select a train on the left to view and edit its configured coach fares.</p>
+                </div>
+              ) : farePairsList.length === 0 ? (
+                <div className="py-12 text-center text-slate-400 text-sm">
+                  <p>No fares configured for {selectedTrain?.name} yet.</p>
+                  <p className="text-xs text-slate-500 mt-1">Select Origin & Destination stations to add new fares.</p>
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                  {farePairsList.map(([key, item]) => {
+                    const [fromId, toId] = key.split('_');
+                    return (
+                      <div
+                        key={key}
+                        className="p-3.5 bg-slate-800/60 rounded-xl border border-slate-700/80 flex items-center justify-between text-xs"
+                      >
+                        <div>
+                          <div className="flex items-center gap-2 font-bold text-white mb-1">
+                            <span className="font-mono text-emerald-400">{item.fromStn?.code || 'FROM'}</span>
+                            <span className="text-slate-500">→</span>
+                            <span className="font-mono text-blue-400">{item.toStn?.code || 'TO'}</span>
+                            <span className="text-[10px] text-slate-400 font-normal">
+                              ({item.fromStn?.name || 'Origin'} - {item.toStn?.name || 'Dest'})
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-3 text-[11px]">
+                            <span className="text-slate-300">
+                              GENERAL: <strong className="text-emerald-400 font-mono">₹{item.general ?? 'N/A'}</strong>
+                            </span>
+                            <span className="text-slate-300">
+                              FIRST_CLASS: <strong className="text-purple-300 font-mono">₹{item.firstClass ?? 'N/A'}</strong>
+                            </span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFareFromStn(fromId);
+                            setFareToStn(toId);
+                            if (item.general !== undefined) setFareGeneral(item.general);
+                            if (item.firstClass !== undefined) setFareFirstClass(item.firstClass);
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500/30 text-purple-300 text-xs font-semibold transition-all"
+                        >
+                          Edit Fare
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
-            <div className="grid grid-cols-2 gap-3 pt-2">
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">GENERAL Fare (₹)</label>
-                <input
-                  type="number"
-                  value={fareGeneral}
-                  onChange={(e) => setFareGeneral(parseInt(e.target.value, 10))}
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white font-bold"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">FIRST_CLASS Fare (₹)</label>
-                <input
-                  type="number"
-                  value={fareFirstClass}
-                  onChange={(e) => setFareFirstClass(parseInt(e.target.value, 10))}
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white font-bold"
-                />
-              </div>
+          </div>
+        );
+      })()}
+
+      {/* 5. Schedule Generator & Active Schedules */}
+      {activeSubTab === 'schedules' && (() => {
+        const selectedTrain = trains.find((t) => t.id === schedTrainId);
+        const hasRoute = selectedTrain?.route?.stops && selectedTrain.route.stops.length > 0;
+        const stops = selectedTrain?.route?.stops || [];
+        const originStn = stops[0]?.station?.code || 'START';
+        const destStn = stops[stops.length - 1]?.station?.code || 'END';
+
+        // Collect schedules ONLY for the selected train
+        const displaySchedules: Array<{ trainName: string; trainNumber: string; schedule: any }> = [];
+        if (schedTrainId && selectedTrain?.schedules && Array.isArray(selectedTrain.schedules)) {
+          selectedTrain.schedules.forEach((sch: any) => {
+            displaySchedules.push({
+              trainName: selectedTrain.name,
+              trainNumber: selectedTrain.trainNumber,
+              schedule: sch,
+            });
+          });
+        }
+
+        // Sort by departure date descending
+        displaySchedules.sort((a, b) => new Date(b.schedule.departureDate).getTime() - new Date(a.schedule.departureDate).getTime());
+
+        return (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            
+            {/* Left Panel: Schedule Form (6 cols) */}
+            <div className="lg:col-span-6 bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
+              <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-purple-400" />
+                <span>Create Active Train Schedule</span>
+              </h3>
+
+              <form onSubmit={handleCreateSchedule} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">Select Train</label>
+                  <select
+                    value={schedTrainId}
+                    onChange={(e) => setSchedTrainId(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500 font-semibold"
+                  >
+                    <option value="">-- Choose Train --</option>
+                    {trains.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} (#{t.trainNumber}) {t.schedules?.length ? `[${t.schedules.length} Active Schedules]` : '[No Schedules]'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {(() => {
+                  const isAlreadyScheduled = selectedTrain?.schedules?.some((sch: any) => {
+                    const existingDate = new Date(sch.departureDate).toISOString().split('T')[0];
+                    return existingDate === schedDepartureDate;
+                  });
+
+                  return (
+                    <>
+                      {schedTrainId && isAlreadyScheduled && (
+                        <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs flex items-center gap-2 font-medium">
+                          <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                          <span>A schedule for this train on <strong>{schedDepartureDate}</strong> already exists. Multiple schedules on the same day are prohibited.</span>
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="block text-xs font-medium text-slate-300 mb-1">Departure Date</label>
+                        <input
+                          type="date"
+                          required
+                          value={schedDepartureDate}
+                          onChange={(e) => setSchedDepartureDate(e.target.value)}
+                          className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-purple-500 font-semibold"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={!schedTrainId || !hasRoute || Boolean(isAlreadyScheduled)}
+                        className={`w-full py-3 font-bold rounded-xl text-xs transition-all ${
+                          !schedTrainId || !hasRoute || isAlreadyScheduled
+                            ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/50'
+                            : 'bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-600/20'
+                        }`}
+                      >
+                        {!schedTrainId
+                          ? 'Select a Train'
+                          : !hasRoute
+                          ? 'Configure Train Route First'
+                          : isAlreadyScheduled
+                          ? 'Schedule Already Exists for Date'
+                          : 'Generate Active Schedule & Trigger Outbox'}
+                      </button>
+                    </>
+                  );
+                })()}
+              </form>
             </div>
 
-            <button
-              type="submit"
-              className="w-full py-3 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl text-xs shadow-lg shadow-purple-600/20 transition-all"
-            >
-              Initialize Fares Matrix
-            </button>
-          </form>
-        </div>
-      )}
+            {/* Right Panel: Active Schedules List (6 cols) */}
+            <div className="lg:col-span-6 bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
+              <h3 className="text-lg font-bold text-white mb-4 flex items-center justify-between">
+                <span>
+                  {selectedTrain ? `Active Schedules: ${selectedTrain.name}` : 'Active Train Schedules'}
+                </span>
+                {selectedTrain && (
+                  <span className="text-xs text-purple-400 font-semibold">{displaySchedules.length} Active</span>
+                )}
+              </h3>
 
-      {/* 5. Schedule Generator */}
-      {activeSubTab === 'schedules' && (
-        <div className="max-w-3xl mx-auto bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
-          <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-purple-400" />
-            <span>Create Train Schedule for Date</span>
-          </h3>
+              {!schedTrainId ? (
+                <div className="py-12 text-center text-slate-400 text-sm">
+                  <Calendar className="w-10 h-10 text-slate-600 mx-auto mb-2 opacity-50" />
+                  <p>Select a train on the left to view its active schedules.</p>
+                </div>
+              ) : displaySchedules.length === 0 ? (
+                <div className="py-12 text-center text-slate-400 text-sm">
+                  <Calendar className="w-10 h-10 text-slate-600 mx-auto mb-2 opacity-50" />
+                  <p>No active schedules for {selectedTrain?.name}.</p>
+                  <p className="text-xs text-slate-500 mt-1">Choose a date on the left to generate new schedules.</p>
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                  {displaySchedules.map(({ trainName, trainNumber, schedule }) => {
+                    const departureDateFormatted = new Date(schedule.departureDate).toLocaleDateString('en-US', {
+                      weekday: 'short',
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric',
+                    });
 
-          <form onSubmit={handleCreateSchedule} className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">Select Train</label>
-              <select
-                value={schedTrainId}
-                onChange={(e) => setSchedTrainId(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500"
-              >
-                <option value="">-- Choose Train --</option>
-                {trains.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} (#{t.trainNumber})
-                  </option>
-                ))}
-              </select>
+                    return (
+                      <div
+                        key={schedule.id}
+                        className="p-3.5 bg-slate-800/60 rounded-xl border border-slate-700/80 flex items-center justify-between text-xs"
+                      >
+                        <div>
+                          <div className="flex items-center gap-2 font-bold text-white mb-1">
+                            <span>{trainName}</span>
+                            <span className="font-mono text-purple-300">#{trainNumber}</span>
+                          </div>
+                          <p className="text-slate-400 font-mono text-[11px]">
+                            Departure Date: <strong className="text-white">{departureDateFormatted}</strong>
+                          </p>
+                          <p className="text-[10px] text-slate-500 font-mono mt-0.5">
+                            ID: {schedule.id.slice(0, 18)}...
+                          </p>
+                        </div>
+
+                        <div className="text-right flex flex-col items-end gap-1">
+                          <span className="px-2.5 py-1 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-mono font-bold text-[10px]">
+                            {schedule.status || 'ACTIVE'}
+                          </span>
+                          <span className="text-[9px] text-slate-400 font-mono">
+                            Outbox Synced
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">Departure Date</label>
-              <input
-                type="date"
-                required
-                value={schedDepartureDate}
-                onChange={(e) => setSchedDepartureDate(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-purple-500"
-              />
-            </div>
-
-            <button
-              type="submit"
-              className="w-full py-3 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl text-xs shadow-lg shadow-purple-600/20 transition-all"
-            >
-              Generate Active Schedule
-            </button>
-          </form>
-        </div>
-      )}
+          </div>
+        );
+      })()}
 
     </div>
   );

@@ -310,7 +310,16 @@ const createSchedule = async ({ trainId, departureDate, status }: CreateSchedule
 
 const createFares = async (trainId: string, fares: Array<{ fromStationId: string; toStationId: string; coachType: any; fare: number }>) => {
     const train = await prisma.train.findUnique({
-        where: { id: trainId }
+        where: { id: trainId },
+        include: {
+            route: {
+                include: {
+                    stops: {
+                        orderBy: { sequence: 'asc' }
+                    }
+                }
+            }
+        }
     });
 
     if (!train) {
@@ -321,16 +330,39 @@ const createFares = async (trainId: string, fares: Array<{ fromStationId: string
         throw new BadRequestError("Fares array is required and cannot be empty");
     }
 
+    const stops = train.route?.stops || [];
+
     for (const fareItem of fares) {
         if (!fareItem.fromStationId || !fareItem.toStationId || !fareItem.coachType || fareItem.fare === undefined || fareItem.fare < 0) {
             throw new BadRequestError("Each fare item must include fromStationId, toStationId, coachType, and a non-negative fare amount");
         }
+
+        if (fareItem.fromStationId === fareItem.toStationId) {
+            throw new BadRequestError("Origin and Destination stations cannot be the same station.");
+        }
+
+        if (stops.length > 0) {
+            const fromStop = stops.find((s) => s.stationId === fareItem.fromStationId);
+            const toStop = stops.find((s) => s.stationId === fareItem.toStationId);
+
+            if (fromStop && toStop && fromStop.sequence >= toStop.sequence) {
+                throw new BadRequestError(`Invalid direction! Fares can only be defined in the forward train route direction (Stop #${fromStop.sequence} → Stop #${toStop.sequence} is invalid).`);
+            }
+        }
     }
 
     const createdFares = await prisma.$transaction(async (tx) => {
-        await tx.fare.deleteMany({
-            where: { trainId }
-        });
+        // Delete existing fares for the specific station pair being updated
+        for (const f of fares) {
+            await tx.fare.deleteMany({
+                where: {
+                    trainId,
+                    fromStationId: f.fromStationId,
+                    toStationId: f.toStationId,
+                    coachType: f.coachType
+                }
+            });
+        }
 
         await tx.fare.createMany({
             data: fares.map((f) => ({
@@ -362,6 +394,9 @@ const getAllTrains = async () => {
                 orderBy: { coachNumber: 'asc' }
             },
             fares: true,
+            schedules: {
+                orderBy: { departureDate: 'desc' }
+            },
             route: {
                 include: {
                     stops: {
