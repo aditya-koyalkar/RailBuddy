@@ -52,7 +52,7 @@ const indexTrain = async (trainEvent: any) => {
         trainName: train.trainName,
         trainNumber: train.trainNumber,
         route: [],
-        schedule: [],
+        schedules: [],
         seatSummary
     }
 
@@ -71,8 +71,9 @@ const indexTrain = async (trainEvent: any) => {
 
 const indexTrainRoute = async (routeEvent: any) => {
     const routeData = routeEvent?.data || {};
-    const { train, routeStations } = routeData;
-    if (!train || !routeStations) {
+    const { train, stops } = routeData;
+    if (!train || !stops) {
+        logger.warn(`indexTrainRoute: missing train or stops in payload`, { keys: Object.keys(routeData) });
         return;
     }
 
@@ -80,30 +81,32 @@ const indexTrainRoute = async (routeEvent: any) => {
         total: 0, LOWER: 0, MIDDLE: 0, UPPER: 0, SIDE_UPPER: 0, SIDE_LOWER: 0
     } as any;
 
-    (train.seats || []).forEach((s: any) => {
-        seatSummary.total++;
-        if (seatSummary[s.seatType] !== undefined) {
-            seatSummary[s.seatType]++
-        }
+    (train.coaches || []).forEach((coach: any) => {
+        (coach.seats || []).forEach((s: any) => {
+            seatSummary.total++;
+            if (seatSummary[s.seatType] !== undefined) {
+                seatSummary[s.seatType]++
+            }
+        })
     })
 
     const doc = {
         trainId: train.id,
-        trainName: train.trainName,
+        trainName: train.name,
         trainNumber: train.trainNumber,
-        route: routeStations.map((rs: any) => {
+        route: stops.map((rs: any) => {
             return {
-                stationId: rs.station.stationId,
+                stationId: rs.station.id,
                 name: rs.station.name,
                 city: rs.station.city,
                 code: rs.station.code,
-                sequenceNumber: rs.sequenceNumber,
-                arrivalTime: rs.arrivalTime,
-                departureTime: rs.departureTime,
-                distanceFromOrigin: rs.distanceFromOrigin
+                sequenceNumber: rs.sequence,
+                arrivalTime: rs.arrivalMinute,
+                departureTime: rs.departureMinute,
+                distanceFromOrigin: rs.distanceFromOrigin ?? 0
             }
         }),
-        schedule: [],
+        schedules: [],
         seatSummary
     }
 
@@ -114,7 +117,7 @@ const indexTrainRoute = async (routeEvent: any) => {
         refresh: true
     })
 
-    for (const rs of routeStations) {
+    for (const rs of stops) {
         await esClient.index({
             index: STATION_INDEX,
             id: rs.station.id,
@@ -131,8 +134,6 @@ const indexTrainRoute = async (routeEvent: any) => {
             refresh: true
         })
     }
-
-
 
     logger.info(`Train route indexed successfully: ${train.id}`);
 

@@ -59,14 +59,16 @@ export const authApi = {
 
 // 2. Search API
 export const searchApi = {
+  // Station autocomplete still uses Elasticsearch (correct use of ES — fuzzy text search)
   autocomplete: (query: string) =>
     request<{ success: boolean; data: Array<{ id: string; name: string; code: string; city: string; state: string }> }>(
       `/search/search/autocomplete?q=${encodeURIComponent(query)}`
     ),
 
-  searchTrains: (from: string, to: string, date?: string) =>
-    request<{ success: boolean; data: any[] }>(
-      `/search/search/trains?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${date ? `&date=${encodeURIComponent(date)}` : ''}`
+  // Train search uses admin-service direct DB query (from + to + date = exact structured query, no need for ES)
+  searchTrains: (from: string, to: string, date: string) =>
+    request<{ success: boolean; data: any }>(
+      `/admins/train/search?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&date=${encodeURIComponent(date)}`
     ),
 };
 

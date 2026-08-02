@@ -29,7 +29,11 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
     setError(null);
     try {
       const res = await searchApi.searchTrains(fromCode, toCode, journeyDate);
-      const trainList = res.data || [];
+
+      // Admin-service returns: { success: true, data: { trains: [...], from, to, date, count } }
+      const rawData = (res as any).data;
+      const trainList: any[] = Array.isArray(rawData?.trains) ? rawData.trains : [];
+
       setTrains(trainList);
 
       // Fetch inventory availability for each schedule
@@ -141,10 +145,11 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
         <div className="space-y-6">
           {trains.map((t) => {
             const avail = availabilityMap[t.scheduleId];
+            const hasSchedule = Boolean(t.scheduleId);
 
             return (
               <div
-                key={t.id || t.scheduleId || t.trainNumber}
+                key={t.scheduleId || t.trainId || t.trainNumber}
                 className="bg-slate-900 border border-slate-800 hover:border-slate-700/80 rounded-2xl p-6 shadow-xl transition-all"
               >
                 {/* Train Header */}
@@ -154,22 +159,28 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
                       <span className="px-3 py-1 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 font-mono font-bold text-xs">
                         #{t.trainNumber}
                       </span>
-                      <h3 className="text-lg font-bold text-white">{t.trainName || t.name}</h3>
+                      <h3 className="text-lg font-bold text-white">{t.trainName}</h3>
                     </div>
                     <p className="text-xs text-slate-400 mt-1 flex items-center gap-2">
-                      <span>Runs daily</span>
+                      <span>Runs on this route</span>
                       <span>•</span>
-                      <span className="text-emerald-400 font-medium">
-                        Schedule: {avail?.status || 'ACTIVE'}
-                      </span>
+                      {hasSchedule ? (
+                        <span className="text-emerald-400 font-medium">
+                          Schedule: {avail?.status || t.scheduleStatus || 'ACTIVE'}
+                        </span>
+                      ) : (
+                        <span className="text-amber-400 font-medium">
+                          No schedule on {journeyDate}
+                        </span>
+                      )}
                     </p>
                   </div>
 
                   <div className="flex items-center gap-6">
                     <div className="text-right">
                       <p className="text-xs text-slate-400 font-medium">Departure</p>
-                      <p className="text-sm font-bold text-white">{formatMinutes(t.departureMinute || t.fromDepartureMinute || 480)}</p>
-                      <p className="text-xs text-slate-400">{t.fromStationCode || fromCode}</p>
+                      <p className="text-sm font-bold text-white">{formatMinutes(t.from?.departureMinute)}</p>
+                      <p className="text-xs text-slate-400">{t.from?.code || fromCode}</p>
                     </div>
 
                     <div className="flex flex-col items-center">
@@ -181,60 +192,72 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
 
                     <div>
                       <p className="text-xs text-slate-400 font-medium">Arrival</p>
-                      <p className="text-sm font-bold text-white">{formatMinutes(t.arrivalMinute || t.toArrivalMinute || 1200)}</p>
-                      <p className="text-xs text-slate-400">{t.toStationCode || toCode}</p>
+                      <p className="text-sm font-bold text-white">{formatMinutes(t.to?.arrivalMinute)}</p>
+                      <p className="text-xs text-slate-400">{t.to?.code || toCode}</p>
                     </div>
                   </div>
                 </div>
 
+                {/* No schedule warning */}
+                {!hasSchedule && (
+                  <div className="mt-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>This train runs on this route but has no active schedule for <strong>{journeyDate}</strong>. Create a schedule in the Admin Dashboard to enable booking.</span>
+                  </div>
+                )}
+
                 {/* Coach Class Cards Grid */}
-                <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {['GENERAL', 'FIRST_CLASS', '3A', '2A', '1A', 'SL'].map((cls) => {
-                    if (selectedClassFilter !== 'ALL' && selectedClassFilter !== cls) return null;
+                {hasSchedule && (
+                  <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {['GENERAL', 'FIRST_CLASS', '3A', '2A', '1A', 'SL'].map((cls) => {
+                      if (selectedClassFilter !== 'ALL' && selectedClassFilter !== cls) return null;
 
-                    // Match fare or fallback
-                    const fareObj = (t.fares || []).find((f: any) => f.coachType?.toUpperCase() === cls);
-                    const fareAmount = fareObj ? fareObj.fare : (cls === 'FIRST_CLASS' ? 1800 : cls === 'GENERAL' ? 500 : 1100);
+                      // Match fare or fallback
+                      const fareObj = (t.fares || []).find((f: any) => f.coachType?.toUpperCase() === cls);
+                      const fareAmount = fareObj ? fareObj.fare : (cls === 'FIRST_CLASS' ? 1800 : cls === 'GENERAL' ? 500 : 1100);
 
-                    return (
-                      <div
-                        key={cls}
-                        onClick={() => onSelectTrainSchedule({ ...t, selectedClass: cls, fareAmount })}
-                        className="p-3.5 rounded-xl bg-slate-800/60 border border-slate-700/80 hover:border-blue-500 cursor-pointer transition-all hover:scale-[1.02] flex flex-col justify-between group"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-sm text-white group-hover:text-blue-400 transition-colors">{cls}</span>
-                          <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                            Available
-                          </span>
-                        </div>
-
-                        <div className="mt-3 flex items-end justify-between">
-                          <div>
-                            <p className="text-[10px] text-slate-400">Fare per seat</p>
-                            <p className="text-base font-extrabold text-white">₹{fareAmount}</p>
+                      return (
+                        <div
+                          key={cls}
+                          onClick={() => onSelectTrainSchedule({ ...t, selectedClass: cls, fareAmount })}
+                          className="p-3.5 rounded-xl bg-slate-800/60 border border-slate-700/80 hover:border-blue-500 cursor-pointer transition-all hover:scale-[1.02] flex flex-col justify-between group"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-sm text-white group-hover:text-blue-400 transition-colors">{cls}</span>
+                            <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                              Available
+                            </span>
                           </div>
-                          <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-blue-400 group-hover:translate-x-1 transition-all" />
+
+                          <div className="mt-3 flex items-end justify-between">
+                            <div>
+                              <p className="text-[10px] text-slate-400">Fare per seat</p>
+                              <p className="text-base font-extrabold text-white">₹{fareAmount}</p>
+                            </div>
+                            <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-blue-400 group-hover:translate-x-1 transition-all" />
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                )}
 
                 {/* Bottom Action Footer */}
-                <div className="mt-4 pt-3 border-t border-slate-800/60 flex items-center justify-between text-xs text-slate-400">
-                  <span className="flex items-center gap-1">
-                    <Shield className="w-3.5 h-3.5 text-blue-400" />
-                    Distributed Saga Protected
-                  </span>
-                  <button
-                    onClick={() => onSelectTrainSchedule({ ...t, selectedClass: '3A', fareAmount: 1100 })}
-                    className="text-blue-400 font-semibold hover:text-blue-300 flex items-center gap-1"
-                  >
-                    <span>Select Seats & Book</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+                {hasSchedule && (
+                  <div className="mt-4 pt-3 border-t border-slate-800/60 flex items-center justify-between text-xs text-slate-400">
+                    <span className="flex items-center gap-1">
+                      <Shield className="w-3.5 h-3.5 text-blue-400" />
+                      Distributed Saga Protected
+                    </span>
+                    <button
+                      onClick={() => onSelectTrainSchedule({ ...t, selectedClass: '3A', fareAmount: 1100 })}
+                      className="text-blue-400 font-semibold hover:text-blue-300 flex items-center gap-1"
+                    >
+                      <span>Select Seats & Book</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
 
               </div>
             );

@@ -44,9 +44,12 @@ router.post('/payments/payment/verify', requireAuth, endpointRatelimit(10, 90000
 router.get('/payments/payment/orders/:bookingId', requireAuth, endpointRatelimit(10, 90000), paymentServiceProxy);
 router.post('/payments/payment/webhook/polar', endpointRatelimit(60, 60000), paymentServiceProxy);
 
-// Search routes
+// Search routes (public — no auth)
 router.get('/search/search/trains', endpointRatelimit(30, 90000), searchServiceProxy);
 router.get('/search/search/autocomplete', endpointRatelimit(30, 90000), searchServiceProxy);
+
+// Train search via admin-service DB (public — no auth, replaces ES train search)
+router.get('/admins/train/search', endpointRatelimit(30, 90000), adminServiceProxy);
 
 // Public Auth routes
 router.post('/users/auth/login', endpointRatelimit(10, 90000), userServiceProxy);

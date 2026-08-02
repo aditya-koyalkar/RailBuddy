@@ -104,3 +104,22 @@ export const getAllTrains = asyncHandler(async (_req, res) => {
         data: trains
     });
 });
+
+export const searchTrains = asyncHandler(async (req, res) => {
+    const { from, to, date } = req.query;
+
+    if (!from || !to || !date) {
+        throw new BadRequestError("'from', 'to' station codes and 'date' are all required");
+    }
+
+    const results = await trainService.searchTrains(
+        from as string,
+        to as string,
+        date as string
+    );
+
+    return res.status(200).json({
+        success: true,
+        data: results
+    });
+});

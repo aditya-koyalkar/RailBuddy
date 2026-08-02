@@ -2,26 +2,11 @@ import searchService from "../services/search.service";
 import { asyncHandler } from "../utils/asyncHandler";
 import { BadRequestError } from "../utils/error";
 
-export const searchTrains = asyncHandler(async (req, res) => {
-
-    const { from, to, date } = req.query;
-    if (!from || !to) {
-        throw new BadRequestError("source and destination are required")
-    }
-
-    const results = await searchService.searchTrains(from as string, to as string, date as string || null);
-
-    return res.status(200).json({
-        data: results,
-        success: true
-    })
-
-})
-
+// Station autocomplete — the only use of Elasticsearch in this service
 export const autoComplete = asyncHandler(async (req, res) => {
     const { q } = req.query as { q?: string };
     if (!q || q.length <= 1) {
-        throw new BadRequestError("Query should have atleast 2 characters");
+        throw new BadRequestError("Query should have at least 2 characters");
     }
 
     const suggestions = await searchService.autocompleteStation(q)
@@ -30,7 +15,4 @@ export const autoComplete = asyncHandler(async (req, res) => {
         data: suggestions,
         success: true
     })
-
-
-
 })
