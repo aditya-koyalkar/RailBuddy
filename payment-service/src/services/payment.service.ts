@@ -361,7 +361,19 @@ export const refundPaymentOrder = async (bookingId: string, amount?: number, rea
     // Call Polar API to process refund if polarOrderId exists
     let refundResult: any = null;
     if (order.polarOrderId) {
-        refundResult = await polarService.createRefund(order.polarOrderId, refundAmount, reason);
+        try {
+            refundResult = await polarService.createRefund(order.polarOrderId, refundAmount, reason);
+        } catch (error: any) {
+            await createAuditLog(
+                order.id,
+                order.bookingId,
+                PaymentAuditAction.REFUND_FAILED,
+                order.status,
+                order.status,
+                { reason: error.message || "Polar refund creation failed", refundAmount }
+            );
+            throw error;
+        }
     }
 
     const refundId = refundResult?.id || `ref_${Date.now()}`;

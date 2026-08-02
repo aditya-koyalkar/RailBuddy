@@ -67,6 +67,23 @@ export const handlePolarWebhook = async (req: Request, res: Response) => {
             } else if (eventData.status === "failed" || eventData.status === "expired") {
                 await paymentService.handleOrderFailed(undefined, checkoutId, bookingId, `Checkout ${eventData.status}`);
             }
+        } else if (event.type === "refund.created" || event.type === "refund.updated") {
+            const refundStatus = eventData.status;
+            if (bookingId && (refundStatus === "succeeded" || !refundStatus)) {
+                await paymentService.refundPaymentOrder(bookingId, eventData.amount ? eventData.amount / 100 : undefined, eventData.reason);
+            } else if (bookingId && refundStatus === "failed") {
+                const order = await prisma.paymentOrder.findUnique({ where: { bookingId } });
+                if (order) {
+                    await paymentService.createAuditLog(
+                        order.id,
+                        bookingId,
+                        PaymentAuditAction.REFUND_FAILED,
+                        order.status,
+                        order.status,
+                        { reason: eventData.failure_reason || "Refund failed on Polar gateway" }
+                    );
+                }
+            }
         }
 
         return res.status(202).json({ received: true });
