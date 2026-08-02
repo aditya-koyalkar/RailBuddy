@@ -46,3 +46,35 @@ export const cancelBooking = asyncHandler(async (req, res) => {
         data: booking
     });
 });
+
+export const getUserBookings = asyncHandler(async (req, res) => {
+    const userId = req.user?.id;
+    if (!userId) {
+        throw new Error("UserId is required");
+    }
+
+    const bookings = await bookingService.getUserBookings(userId);
+
+    return res.status(200).json({
+        success: true,
+        message: "User bookings fetched successfully",
+        data: bookings
+    });
+});
+
+export const getBookingById = asyncHandler(async (req, res) => {
+    const userId = req.user?.id;
+    const bookingId = req.params.id as string;
+
+    if (!bookingId || !userId) {
+        throw new Error("bookingId and userId are required");
+    }
+
+    const booking = await bookingService.getBookingById(bookingId, userId);
+
+    return res.status(200).json({
+        success: true,
+        message: "Booking details fetched successfully",
+        data: booking
+    });
+});

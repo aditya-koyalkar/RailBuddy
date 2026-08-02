@@ -10,7 +10,7 @@ const client = axios.create({
 const userClient = {
     async getUserProfile(userId: string) {
         return withRetry(async () => {
-            const { data } = await client.get("/get-profile", {
+            const { data } = await client.get("/api/v1/user/get-profile", {
                 headers: {
                     "x-user-id": userId
                 }

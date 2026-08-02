@@ -96,3 +96,11 @@ export const createFares = asyncHandler(async (req, res) => {
         data: result
     });
 });
+
+export const getAllTrains = asyncHandler(async (_req, res) => {
+    const trains = await trainService.getAllTrains();
+    return res.status(200).json({
+        success: true,
+        data: trains
+    });
+});

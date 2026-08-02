@@ -421,4 +421,37 @@ async function cancelBooking(bookingId: string, userId: string, reason?: string)
     return updatedBooking;
 }
 
-export default { createBooking, cancelBooking };
+async function getUserBookings(userId: string) {
+    return await prisma.booking.findMany({
+        where: { userId },
+        include: {
+            passengers: true,
+            seatAssignments: true,
+            payment: true
+        },
+        orderBy: { createdAt: 'desc' }
+    });
+}
+
+async function getBookingById(bookingId: string, userId: string) {
+    const booking = await prisma.booking.findUnique({
+        where: { id: bookingId },
+        include: {
+            passengers: true,
+            seatAssignments: true,
+            payment: true
+        }
+    });
+
+    if (!booking) {
+        throw new NotFoundError("Booking not found");
+    }
+
+    if (booking.userId !== userId) {
+        throw new ForbiddenError("You are not authorized to view this booking");
+    }
+
+    return booking;
+}
+
+export default { createBooking, cancelBooking, getUserBookings, getBookingById };

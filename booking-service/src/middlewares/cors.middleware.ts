@@ -3,13 +3,13 @@ import { config } from "../config/index.js"
 
 export const corsMiddleware = cors({
     origin: (origin, callback) => {
-        const allowedOrigins = config.ALLOWED_ORIGINS.split(',');
-        console.log(origin)
-        if (allowedOrigins.includes(origin || "")) {
+        if (!origin) return callback(null, true);
+        const allowedOrigins = config.ALLOWED_ORIGINS.split(',').map(o => o.trim());
+        if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
             callback(null, true)
         }
         else {
-            callback(new Error("Not allowed by CORS"))
+            callback(new Error(`CORS error: ${origin} not allowed`))
         }
     },
     credentials: true,

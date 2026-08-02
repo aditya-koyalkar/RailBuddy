@@ -40,4 +40,12 @@ const createStation = async ({ name, code, city, state }: CreateStationDTO) => {
     return station;
 }
 
-export default { createStation }
+const getAllStations = async () => {
+    return await prisma.station.findMany({
+        orderBy: {
+            name: 'asc'
+        }
+    });
+}
+
+export default { createStation, getAllStations }

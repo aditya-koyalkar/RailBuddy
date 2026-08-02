@@ -23,3 +23,11 @@ export const createStation = asyncHandler(async (req, res) => {
     })
 
 })
+
+export const getAllStations = asyncHandler(async (_req, res) => {
+    const stations = await stationService.getAllStations();
+    return res.status(200).json({
+        success: true,
+        data: stations
+    });
+});

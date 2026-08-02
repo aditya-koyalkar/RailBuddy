@@ -352,6 +352,29 @@ const createFares = async (trainId: string, fares: Array<{ fromStationId: string
     return createdFares;
 }
 
-export default { createTrain, createRoute, getTrainById, createSchedule, createFares }
+const getAllTrains = async () => {
+    return await prisma.train.findMany({
+        include: {
+            coaches: {
+                include: {
+                    seats: true
+                },
+                orderBy: { coachNumber: 'asc' }
+            },
+            fares: true,
+            route: {
+                include: {
+                    stops: {
+                        include: { station: true },
+                        orderBy: { sequence: 'asc' }
+                    }
+                }
+            }
+        },
+        orderBy: { createdAt: 'desc' }
+    });
+}
+
+export default { createTrain, createRoute, getTrainById, createSchedule, createFares, getAllTrains }
 
 

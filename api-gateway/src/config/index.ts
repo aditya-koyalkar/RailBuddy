@@ -18,6 +18,7 @@ export const config = {
     CIRCUIT_BREAKER_TIMEOUT: parseInt(process.env.CIRCUIT_BREAKER_TIMEOUT || '300000', 10),
     SERVICE_TIMEOUT_MS: parseInt(process.env.SERVICE_TIMEOUT_MS || '50000', 10),
     SEARCH_SERVICE_URL: process.env.SEARCH_SERVICE_URL || "",
-    BOOKING_SERVICE_URL: process.env.BOOKING_SERVICE_URL || "http://localhost:4008",
-    PAYMENT_SERVICE_URL: process.env.PAYMENT_SERVICE_URL || "http://localhost:4005",
+    BOOKING_SERVICE_URL: process.env.BOOKING_SERVICE_URL || "http://localhost:4004",
+    INVENTORY_SERVICE_URL: process.env.INVENTORY_SERVICE_URL || "http://localhost:4005",
+    PAYMENT_SERVICE_URL: process.env.PAYMENT_SERVICE_URL || "http://localhost:4006",
 }

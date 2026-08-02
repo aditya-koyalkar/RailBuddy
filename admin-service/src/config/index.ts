@@ -11,5 +11,5 @@ export const config = {
     KAFKA_BROKER: process.env.KAFKA_BROKER || 'localhost:9093',
     ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS || "",
     PORT: process.env.PORT || 4002,
-    USER_SERVICE_URL: process.env.USER_SERVICE_URL || "http://localhost:4002/api/v1/user"
+    USER_SERVICE_URL: process.env.USER_SERVICE_URL || "http://localhost:4001"
 }
