@@ -27,16 +27,24 @@ class InventoryConsumer {
                     offset: message.offset,
                     value: message.value?.toString(),
                 });
-                const value = JSON.parse(message.value?.toString() || "")
-                switch (topic) {
-                    case TOPICS.SCHEDULE_CREATED:
-                        inventoryService.initializeInventory(value);
-                        break;
-                    case TOPICS.SCHEDULE_CANCELLED:
-                        inventoryService.cancelSheduleInventory(value);
-                        break;
-                    default:
-                        logger.warn(`Unknown topic: ${topic}`);
+                try {
+                    const value = JSON.parse(message.value?.toString() || "");
+                    switch (topic) {
+                        case TOPICS.SCHEDULE_CREATED:
+                            await inventoryService.initializeInventory(value);
+                            break;
+                        case TOPICS.SCHEDULE_CANCELLED:
+                            await inventoryService.cancelSheduleInventory(value);
+                            break;
+                        default:
+                            logger.warn(`Unknown topic: ${topic}`);
+                    }
+                } catch (error: any) {
+                    logger.error(`Error processing inventory consumer message on topic ${topic}:`, {
+                        error: error.message,
+                        stack: error.stack
+                    });
+                    throw error;
                 }
             }
         })

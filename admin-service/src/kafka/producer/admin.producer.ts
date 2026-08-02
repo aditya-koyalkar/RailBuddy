@@ -35,25 +35,26 @@ class AdminProducer {
     }
 
     async publishScheduleCreated(schedule: Schedule, train: any) {
+        const coaches = train?.coaches || [];
         const payload = {
             scheduleId: schedule.id,
             trainId: train.id,
             trainNumber: train.trainNumber,
             trainName: train.name,
             departureDate: schedule.departureDate,
-            coaches: train.coaches.map((coach: any) => ({
+            coaches: coaches.map((coach: any) => ({
                 coachId: coach.id,
                 coachNumber: coach.coachNumber,
                 coachType: coach.coachType,
-                seats: coach.seats.map((seat: any) => ({
+                seats: (coach.seats || []).map((seat: any) => ({
                     seatId: seat.id,
                     seatNumber: seat.seatNumber,
                     seatLabel: seat.seatLabel,
                     seatType: seat.seatType
                 }))
             })),
-            seats: train.coaches.flatMap((coach: any) =>
-                coach.seats.map((seat: any) => ({
+            seats: coaches.flatMap((coach: any) =>
+                (coach.seats || []).map((seat: any) => ({
                     seatId: seat.id,
                     coachId: coach.id,
                     coachNumber: coach.coachNumber,
@@ -63,10 +64,10 @@ class AdminProducer {
                     seatType: seat.seatType
                 }))
             ),
-            route: train.route?.stops.map((stop: any) => ({
+            route: train.route?.stops?.map((stop: any) => ({
                 stationId: stop.stationId,
-                stationName: stop.station.name,
-                stationCode: stop.station.code,
+                stationName: stop.station?.name || '',
+                stationCode: stop.station?.code || '',
                 sequenceNumber: stop.sequence,
                 sequence: stop.sequence,
                 arrivalDay: stop.arrivalDay,

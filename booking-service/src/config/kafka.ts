@@ -27,7 +27,7 @@ export const producer = kafka.producer({
 
 
 export const consumer = kafka.consumer({
-    groupId: 'inventory-service-group',
+    groupId: 'booking-service-group',
     sessionTimeout: 30000,
     heartbeatInterval: 3000
 })
