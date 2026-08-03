@@ -10,7 +10,7 @@ const client = axios.create({
 const paymentClient = {
     async createPaymentOrder(bookingId: string, amount: number, userId: string, idempotencyKey: string) {
         return withRetry(async () => {
-            const { data } = await client.post('/orders', {
+            const { data } = await client.post('/api/payment/orders', {
                 bookingId,
                 amount,
                 userId,
@@ -21,7 +21,7 @@ const paymentClient = {
     },
     async verifyPayment(checkoutId: string, bookingId?: string) {
         return withRetry(async () => {
-            const { data } = await client.post('/verify', {
+            const { data } = await client.post('/api/payment/verify', {
                 checkoutId,
                 bookingId
             });
@@ -30,7 +30,7 @@ const paymentClient = {
     },
     async refundPayment(bookingId: string, amount?: number, reason?: string) {
         return withRetry(async () => {
-            const { data } = await client.post('/refund', {
+            const { data } = await client.post('/api/payment/refund', {
                 bookingId,
                 amount,
                 reason

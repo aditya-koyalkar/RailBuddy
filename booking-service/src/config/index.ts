@@ -14,7 +14,7 @@ export const config = {
     BOOKING_TTL_SECONDS: Number(process.env.BOOKING_TTL_SECONDS) || 10 * 60,
     REDIS_URL: process.env.REDIS_URL || 'redis://localhost:6379',
     LOCK_TTL_SECONDS: Number(process.env.LOCK_TTL_SECONDS) || 10 * 60,
-    INVENTORY_SERVICE_URL: process.env.INVENTORY_SERVICE_URL || '',
-    PAYMENT_SERVICE_URL: process.env.PAYMENT_SERVICE_URL || '',
-    ADMIN_SERVICE_URL: process.env.ADMIN_SERVICE_URL || '',
+    INVENTORY_SERVICE_URL: process.env.INVENTORY_SERVICE_URL || 'http://localhost:4005',
+    PAYMENT_SERVICE_URL: process.env.PAYMENT_SERVICE_URL || 'http://localhost:4006',
+    ADMIN_SERVICE_URL: process.env.ADMIN_SERVICE_URL || 'http://localhost:4002',
 }

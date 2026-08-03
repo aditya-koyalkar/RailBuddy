@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { inventoryApi } from '../services/api';
-import { User as UserIcon, Check, Lock, AlertCircle, ArrowLeft, Shield, Sparkles, RefreshCw, Train, Layers } from 'lucide-react';
+import { User as UserIcon, Check, Lock, AlertCircle, ArrowLeft, Shield, Sparkles, RefreshCw, Train, Layers, X, ArrowRight } from 'lucide-react';
 import { formatCoachType } from '../utils/formatters';
 
 interface SeatSelectorProps {
@@ -20,7 +20,10 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
   const [selectedFilter, setSelectedFilter] = useState<string>('ALL');
   const [availableCoachTypes, setAvailableCoachTypes] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [modalError, setModalError] = useState<string | null>(null);
+  const [showPassengerModal, setShowPassengerModal] = useState(false);
 
   const scheduleId = trainData?.scheduleId;
   const fromSeq = trainData?.from?.sequence || trainData?.fromSequence || trainData?.fromSeq || 1;
@@ -28,7 +31,8 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
 
   const fetchSeats = async (filterCoachType?: string, filterCoachNumber?: string) => {
     setLoading(true);
-    setError(null);
+    setFetchError(null);
+    setFormError(null);
     try {
       if (!scheduleId) {
         throw new Error('Schedule ID is missing for this train selection.');
@@ -45,7 +49,7 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
 
       if (!Array.isArray(seatList) || seatList.length === 0) {
         if (!filterCoachNumber && !filterCoachType) {
-          setError('No seat inventory has been initialized for this train schedule yet.');
+          setFetchError('No seat inventory has been initialized for this train schedule yet.');
         }
         setAllSeats([]);
         return;
@@ -67,7 +71,7 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
       }
     } catch (err: any) {
       console.error('Error fetching inventory seats:', err);
-      setError(err.message || 'Failed to load seat inventory from database.');
+      setFetchError(err.message || 'Failed to load seat inventory from database.');
       setAllSeats([]);
     } finally {
       setLoading(false);
@@ -101,6 +105,7 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
   const handleFilterClick = (cType?: string) => {
     setSelectedSeatIds([]);
     setPassengers([]);
+    setFormError(null);
     if (!cType) {
       setSelectedFilter('ALL');
       fetchSeats(undefined, undefined);
@@ -112,6 +117,7 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
 
   const handleSeatClick = (seat: any) => {
     if (seat.segmentStatus !== 'AVAILABLE') return;
+    setFormError(null);
 
     if (selectedSeatIds.includes(seat.seatId)) {
       const nextSeatIds = selectedSeatIds.filter((id) => id !== seat.seatId);
@@ -119,7 +125,7 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
       setPassengers(passengers.slice(0, nextSeatIds.length));
     } else {
       if (selectedSeatIds.length >= 6) {
-        setError('Maximum 6 seats allowed per booking transaction.');
+        setFormError('Maximum 6 seats allowed per booking transaction.');
         return;
       }
       const nextSeatIds = [...selectedSeatIds, seat.seatId];
@@ -132,6 +138,7 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
   };
 
   const handleQuickAutoSelect = (count: number) => {
+    setFormError(null);
     const available = allSeats.filter((s) => s.segmentStatus === 'AVAILABLE');
     const toSelect = available.slice(0, Math.min(count, 6));
     const ids = toSelect.map((s) => s.seatId);
@@ -140,21 +147,29 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
   };
 
   const handlePassengerChange = (index: number, field: string, value: any) => {
+    setModalError(null);
     const updated = [...passengers];
     updated[index] = { ...updated[index], [field]: value };
     setPassengers(updated);
   };
 
-  const handleConfirmLock = () => {
-    setError(null);
+  const handleOpenPassengerModal = () => {
+    setFormError(null);
     if (selectedSeatIds.length === 0) {
-      setError('Please select at least one available seat to proceed.');
+      setFormError('Please select at least one available seat to proceed.');
       return;
     }
+    setShowPassengerModal(true);
+  };
+
+  const handleConfirmLockAndBook = () => {
+    setModalError(null);
 
     for (let i = 0; i < passengers.length; i++) {
       if (!passengers[i].name.trim()) {
-        setError(`Please enter passenger name for Seat ${selectedSeatIds[i]}`);
+        const seatObj = allSeats.find((s) => s.seatId === selectedSeatIds[i]);
+        const seatName = seatObj ? `Coach ${seatObj.coachNumber} - Seat #${seatObj.seatNumber}` : `Seat #${selectedSeatIds[i]}`;
+        setModalError(`Please enter full name for Passenger #${i + 1} (${seatName}).`);
         return;
       }
     }
@@ -165,15 +180,15 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
 
     const payload = {
       scheduleId,
-      trainId: trainData?.trainId || trainData?.id,
-      trainNumber: trainData?.trainNumber,
-      trainName: trainData?.trainName || trainData?.name,
-      fromStationId: trainData?.from?.stationId || trainData?.fromStationId,
-      toStationId: trainData?.to?.stationId || trainData?.toStationId,
+      trainId: trainData?.trainId || trainData?.id || 'train-id',
+      trainNumber: trainData?.trainNumber || '',
+      trainName: trainData?.trainName || trainData?.name || 'Train',
+      fromStationId: trainData?.from?.stationId || trainData?.fromStationId || 'stn-from-id',
+      toStationId: trainData?.to?.stationId || trainData?.toStationId || 'stn-to-id',
       fromSeq,
       toSeq,
-      fromCode: trainData?.from?.code || trainData?.fromStationCode,
-      toCode: trainData?.to?.code || trainData?.toStationCode,
+      fromCode: trainData?.from?.code || trainData?.fromStationCode || 'START',
+      toCode: trainData?.to?.code || trainData?.toStationCode || 'END',
       seatIds: selectedSeatIds,
       seats: selectedSeatObjects,
       passengers,
@@ -181,6 +196,7 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
       idempotencyKey: `idemp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
     };
 
+    setShowPassengerModal(false);
     onProceedToBooking(payload);
   };
 
@@ -223,7 +239,7 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
               <span>Select Coach Type:</span>
             </span>
 
-            {/* Coach Type Filter Tabs (Always persistent so unselected options stay visible) */}
+            {/* Coach Type Filter Tabs */}
             {availableCoachTypes.map((cType) => {
               const isSelected = selectedFilter === cType;
               return (
@@ -267,15 +283,15 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
           <p className="text-sm font-semibold text-white">Loading Real-Time Seat Inventory...</p>
           <p className="text-xs text-slate-400 mt-1">Fetching live seat segment statuses from database</p>
         </div>
-      ) : error || allSeats.length === 0 ? (
-        /* Explicit Clean Error State - NO Mock Data */
+      ) : fetchError || allSeats.length === 0 ? (
+        /* Critical Database Fetch Error View */
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-12 text-center max-w-2xl mx-auto shadow-xl">
           <div className="w-12 h-12 rounded-full bg-rose-500/10 border border-rose-500/20 flex items-center justify-center mx-auto mb-4">
             <AlertCircle className="w-6 h-6 text-rose-400" />
           </div>
           <h3 className="text-lg font-bold text-white mb-2">Inventory Data Unavailable</h3>
           <p className="text-xs text-slate-400 mb-6 leading-relaxed">
-            {error || 'No inventory record or seats found for this train schedule in the database.'}
+            {fetchError || 'No inventory record or seats found for this train schedule in the database.'}
           </p>
           <div className="flex items-center justify-center gap-3">
             <button
@@ -485,91 +501,44 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
                 ))}
               </div>
             </div>
-
-            {/* Passenger Details Form */}
-            {selectedSeatIds.length > 0 && (
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl animate-in fade-in">
-                <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                  <UserIcon className="w-5 h-5 text-blue-400" />
-                  <span>Passenger Details ({selectedSeatIds.length} Selected)</span>
-                </h3>
-
-                <div className="space-y-3">
-                  {selectedSeatIds.map((seatId, idx) => {
-                    const seatObj = allSeats.find((s) => s.seatId === seatId);
-
-                    return (
-                      <div
-                        key={seatId}
-                        className="p-4 rounded-xl bg-slate-800/50 border border-slate-700/60 grid grid-cols-1 sm:grid-cols-12 gap-3 items-center"
-                      >
-                        <div className="sm:col-span-3">
-                          <p className="text-xs font-bold text-blue-400">Passenger #{idx + 1}</p>
-                          <p className="text-xs text-slate-300 font-mono">
-                            Coach {seatObj?.coachNumber} - Seat #{seatObj?.seatNumber} ({seatObj?.seatType || 'Seat'})
-                          </p>
-                        </div>
-
-                        <div className="sm:col-span-4">
-                          <input
-                            type="text"
-                            required
-                            placeholder="Full Name"
-                            value={passengers[idx]?.name || ''}
-                            onChange={(e) => handlePassengerChange(idx, 'name', e.target.value)}
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
-                          />
-                        </div>
-
-                        <div className="sm:col-span-2">
-                          <input
-                            type="number"
-                            min={1}
-                            max={120}
-                            value={passengers[idx]?.age || 25}
-                            onChange={(e) =>
-                              handlePassengerChange(idx, 'age', parseInt(e.target.value, 10))
-                            }
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-blue-500"
-                          />
-                        </div>
-
-                        <div className="sm:col-span-3">
-                          <select
-                            value={passengers[idx]?.gender || 'MALE'}
-                            onChange={(e) => handlePassengerChange(idx, 'gender', e.target.value)}
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-blue-500"
-                          >
-                            <option value="MALE">Male</option>
-                            <option value="FEMALE">Female</option>
-                            <option value="OTHER">Other</option>
-                          </select>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Right: Fare Summary Sidebar */}
           <div className="lg:col-span-4">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl sticky top-24">
-              <h3 className="text-lg font-bold text-white mb-4">Fare & Booking Summary</h3>
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl sticky top-24 space-y-4">
+              <h3 className="text-lg font-bold text-white">Fare & Booking Summary</h3>
 
-              {error && (
-                <div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center gap-2">
+              {formError && (
+                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-                  <span>{error}</span>
+                  <span>{formError}</span>
                 </div>
               )}
 
-              <div className="space-y-3 border-b border-slate-800 pb-4 text-xs">
+              {/* Selected Seats Badges */}
+              <div>
+                <p className="text-xs font-semibold text-slate-400 mb-2">Selected Seats ({selectedSeatIds.length}):</p>
+                {selectedSeatIds.length === 0 ? (
+                  <p className="text-xs text-slate-500 italic">No seats selected yet. Click available seats on the map.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                    {selectedSeatIds.map((id) => {
+                      const seatObj = allSeats.find((s) => s.seatId === id);
+                      return (
+                        <span key={id} className="px-2.5 py-1 rounded-lg bg-blue-600/20 border border-blue-500/40 text-blue-300 font-mono text-xs font-bold">
+                          {seatObj?.coachNumber}-{seatObj?.seatNumber} ({seatObj?.seatType || 'Seat'})
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-3 border-t border-b border-slate-800 py-4 text-xs">
                 <div className="flex items-center justify-between text-slate-400">
-                  <span>Selected Filter</span>
+                  <span>Coach Type</span>
                   <span className="font-bold text-white">
-                    {selectedFilter === 'ALL' ? 'All Coaches' : formatCoachType(selectedFilter)}
+                    {formatCoachType(selectedFilter)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-slate-400">
@@ -583,7 +552,7 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
               </div>
 
               {/* Total Fare Display */}
-              <div className="my-4 flex items-baseline justify-between">
+              <div className="flex items-baseline justify-between">
                 <span className="text-sm font-semibold text-slate-300">Total Payable</span>
                 <span className="text-2xl font-black text-emerald-400">
                   ₹{(selectedSeatIds.length * (Number(trainData?.fareAmount) || 0)).toLocaleString()}
@@ -591,19 +560,135 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
               </div>
 
               <button
-                onClick={handleConfirmLock}
+                onClick={handleOpenPassengerModal}
                 disabled={selectedSeatIds.length === 0}
                 className="w-full py-3.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold rounded-xl text-sm shadow-xl shadow-blue-500/25 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
               >
-                <Sparkles className="w-4 h-4" />
-                <span>Lock Seats & Book Ticket</span>
+                <span>Enter Passenger Details</span>
+                <ArrowRight className="w-4 h-4" />
               </button>
 
-              <p className="text-[11px] text-slate-400 text-center mt-3 flex items-center justify-center gap-1">
+              <p className="text-[11px] text-slate-400 text-center flex items-center justify-center gap-1">
                 <Shield className="w-3.5 h-3.5 text-blue-400" />
                 Seats will be locked in Redis for 10 minutes
               </p>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* PASSENGER DETAILS MODAL */}
+      {showPassengerModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in">
+          <div className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden p-6 sm:p-8 space-y-6">
+            
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
+                  <UserIcon className="w-5 h-5 text-blue-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Passenger Details</h3>
+                  <p className="text-xs text-slate-400">
+                    Assign names & details for {selectedSeatIds.length} selected seat(s)
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowPassengerModal(false)}
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Alert Error */}
+            {modalError && (
+              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>{modalError}</span>
+              </div>
+            )}
+
+            {/* Passenger Forms List */}
+            <div className="space-y-4 max-h-[380px] overflow-y-auto pr-1">
+              {selectedSeatIds.map((seatId, idx) => {
+                const seatObj = allSeats.find((s) => s.seatId === seatId);
+
+                return (
+                  <div
+                    key={seatId}
+                    className="p-4 rounded-xl bg-slate-800/60 border border-slate-700/70 grid grid-cols-1 sm:grid-cols-12 gap-3 items-center"
+                  >
+                    <div className="sm:col-span-4">
+                      <p className="text-xs font-bold text-blue-400">Passenger #{idx + 1}</p>
+                      <p className="text-xs text-slate-300 font-mono mt-0.5">
+                        Coach {seatObj?.coachNumber} - Seat #{seatObj?.seatNumber} ({seatObj?.seatType || 'Berth'})
+                      </p>
+                    </div>
+
+                    <div className="sm:col-span-4">
+                      <label className="block text-[10px] text-slate-400 font-medium mb-1">Full Name</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Full Name"
+                        value={passengers[idx]?.name || ''}
+                        onChange={(e) => handlePassengerChange(idx, 'name', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-[10px] text-slate-400 font-medium mb-1">Age</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={120}
+                        value={passengers[idx]?.age || 25}
+                        onChange={(e) =>
+                          handlePassengerChange(idx, 'age', parseInt(e.target.value, 10))
+                        }
+                        className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-blue-500 font-mono"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-[10px] text-slate-400 font-medium mb-1">Gender</label>
+                      <select
+                        value={passengers[idx]?.gender || 'MALE'}
+                        onChange={(e) => handlePassengerChange(idx, 'gender', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-blue-500"
+                      >
+                        <option value="MALE">Male</option>
+                        <option value="FEMALE">Female</option>
+                        <option value="OTHER">Other</option>
+                      </select>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+              <button
+                onClick={() => setShowPassengerModal(false)}
+                className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl text-xs transition-colors"
+              >
+                Back to Seat Map
+              </button>
+              <button
+                onClick={handleConfirmLockAndBook}
+                className="px-6 py-2.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold rounded-xl text-xs shadow-lg shadow-blue-500/25 flex items-center gap-2 transition-all"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span>Confirm & Lock Seats</span>
+              </button>
+            </div>
+
           </div>
         </div>
       )}

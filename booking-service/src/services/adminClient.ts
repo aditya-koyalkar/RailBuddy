@@ -10,7 +10,7 @@ const client = axios.create({
 const adminClient = {
     async getTrainDetails(trainId: string, userId: string) {
         return withRetry(async () => {
-            const { data } = await client.get(`/train/${trainId}`, {
+            const { data } = await client.get(`/api/v1/train/${trainId}`, {
                 headers: {
                     'x-user-id': userId
                 }
