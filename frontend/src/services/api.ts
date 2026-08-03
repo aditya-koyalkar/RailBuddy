@@ -140,19 +140,19 @@ export const bookingApi = {
 // 5. Payment API
 export const paymentApi = {
   createOrder: (payload: { bookingId: string; amount: number; currency?: string }) =>
-    request<{ success: boolean; data: any }>('/payments/payment/orders', {
+    request<{ success: boolean; data: any }>('/payments/orders', {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
 
   verifyPayment: (payload: { bookingId: string; paymentId?: string }) =>
-    request<{ success: boolean; message: string; data: any }>('/payments/payment/verify', {
+    request<{ success: boolean; message: string; data: any }>('/payments/verify', {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
 
   getOrderStatus: (bookingId: string) =>
-    request<{ success: boolean; data: any }>(`/payments/payment/orders/${bookingId}`),
+    request<{ success: boolean; data: any }>(`/payments/orders/${bookingId}`),
 };
 
 // 6. Admin API

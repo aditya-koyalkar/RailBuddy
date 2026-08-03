@@ -109,13 +109,20 @@ export const getPaymentStatus = asyncHandler(async (req: Request, res: Response)
 });
 
 export const verifyPayment = asyncHandler(async (req: Request, res: Response) => {
-    const { checkoutId, bookingId } = req.body;
+    const { checkoutId, paymentId, bookingId } = req.body;
 
-    if (!checkoutId) {
-        throw new BadRequestError("checkoutId is required");
+    let targetCheckoutId = checkoutId || paymentId;
+
+    if (!targetCheckoutId && bookingId) {
+        const order = await prisma.paymentOrder.findUnique({ where: { bookingId } });
+        targetCheckoutId = order?.polarCheckoutId || undefined;
     }
 
-    const result = await paymentService.verifyPaymentOrder(checkoutId, bookingId);
+    if (!targetCheckoutId) {
+        throw new BadRequestError("checkoutId, paymentId, or valid bookingId is required");
+    }
+
+    const result = await paymentService.verifyPaymentOrder(targetCheckoutId, bookingId);
 
     return res.status(200).json({
         success: true,

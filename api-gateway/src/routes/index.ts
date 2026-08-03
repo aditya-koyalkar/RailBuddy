@@ -39,6 +39,12 @@ router.post('/inventory/seats/lock', requireAuth, endpointRatelimit(10, 90000), 
 router.post('/inventory/seats/unlock', requireAuth, endpointRatelimit(10, 90000), inventoryServiceProxy);
 
 // Payment routes
+router.post('/payments/orders', requireAuth, endpointRatelimit(10, 90000), paymentServiceProxy);
+router.post('/payments/verify', requireAuth, endpointRatelimit(10, 90000), paymentServiceProxy);
+router.get('/payments/orders/:bookingId', requireAuth, endpointRatelimit(10, 90000), paymentServiceProxy);
+router.post('/payments/webhook/polar', endpointRatelimit(60, 60000), paymentServiceProxy);
+
+// Backwards-compatible legacy payment route aliases
 router.post('/payments/payment/orders', requireAuth, endpointRatelimit(10, 90000), paymentServiceProxy);
 router.post('/payments/payment/verify', requireAuth, endpointRatelimit(10, 90000), paymentServiceProxy);
 router.get('/payments/payment/orders/:bookingId', requireAuth, endpointRatelimit(10, 90000), paymentServiceProxy);

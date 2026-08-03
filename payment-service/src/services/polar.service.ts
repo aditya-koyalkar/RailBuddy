@@ -2,7 +2,7 @@ import { Polar } from "@polar-sh/sdk";
 import { validateEvent } from "@polar-sh/sdk/webhooks";
 import { config } from "../config/index";
 import { logger } from "../config/logger";
-import { InternalServerError } from "../utils/error";
+import { InternalServerError, BadRequestError, AppError } from "../utils/error";
 
 class PolarService {
     private polar: Polar;
@@ -15,39 +15,21 @@ class PolarService {
     }
 
     /**
-     * Creates a Polar checkout session with dynamic ad-hoc pricing for a booking.
+     * Creates a Polar checkout session with dynamic pricing for a booking.
      */
     async createCheckoutSession(bookingId: string, amount: number, currency: string = "usd") {
         try {
-            // Amount in cents (Polar expects integer cents for fixed prices)
-            const priceAmount = Math.round(amount * 100);
+            const productId = config.POLAR_PRODUCT_ID;
+            if (!productId || productId === "REPLACE_ME") {
+                throw new BadRequestError("POLAR_PRODUCT_ID is not configured in payment-service/.env. Please set POLAR_PRODUCT_ID in your environment variables.");
+            }
 
             const checkoutOptions: any = {
+                products: [productId],
                 metadata: {
                     bookingId
                 }
             };
-
-            // If a product ID is configured, attach ad-hoc price to it; otherwise use ad-hoc checkout directly
-            if (config.POLAR_PRODUCT_ID && config.POLAR_PRODUCT_ID !== "REPLACE_ME") {
-                checkoutOptions.productId = config.POLAR_PRODUCT_ID;
-                checkoutOptions.prices = [
-                    {
-                        amountType: "fixed",
-                        priceAmount,
-                        priceCurrency: currency.toLowerCase()
-                    }
-                ];
-            } else {
-                // Fallback: create checkout using ad-hoc price specification
-                checkoutOptions.prices = [
-                    {
-                        amountType: "fixed",
-                        priceAmount,
-                        priceCurrency: currency.toLowerCase()
-                    }
-                ];
-            }
 
             const session = await this.polar.checkouts.create(checkoutOptions);
 
@@ -62,6 +44,9 @@ class PolarService {
                 checkoutUrl: session.url
             };
         } catch (error: any) {
+            if (error instanceof AppError) {
+                throw error;
+            }
             logger.error(`Failed to create Polar checkout session for booking ${bookingId}`, {
                 error: error.message || error
             });
@@ -99,6 +84,9 @@ class PolarService {
             const checkout = await this.polar.checkouts.get({ id: checkoutId });
             return checkout;
         } catch (error: any) {
+            if (error instanceof AppError) {
+                throw error;
+            }
             logger.error(`Failed to verify checkout ${checkoutId} with Polar API`, { error: error.message || error });
             throw new InternalServerError(`Polar checkout verification failed: ${error.message || "Unknown error"}`);
         }
@@ -127,6 +115,9 @@ class PolarService {
 
             return refund;
         } catch (error: any) {
+            if (error instanceof AppError) {
+                throw error;
+            }
             logger.error(`Failed to create Polar refund for order ${polarOrderId}`, {
                 error: error.message || error
             });
