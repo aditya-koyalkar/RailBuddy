@@ -244,8 +244,14 @@ const searchTrains = async (from: string, to: string, date: string | null) => {
 
         let scheduleInfo = null;
 
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
         if (date && source.schedules.length > 0) {
-            scheduleInfo = source.schedules.find((s: any) => s.status === 'ACTIVE' && normalizeDateString(s.departureDate) === date) || null;
+            const requestedDate = new Date(date);
+            if (requestedDate >= today) {
+                scheduleInfo = source.schedules.find((s: any) => s.status === 'ACTIVE' && normalizeDateString(s.departureDate) === date) || null;
+            }
         }
 
 

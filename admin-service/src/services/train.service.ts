@@ -288,6 +288,25 @@ const createSchedule = async ({ trainId, departureDate, status }: CreateSchedule
             }
         });
 
+        const coaches = train.coaches || [];
+        const serializedTrain = {
+            id: train.id,
+            trainNumber: train.trainNumber,
+            name: train.name,
+            route: train.route,
+            coaches: coaches.map((coach) => ({
+                id: coach.id,
+                coachNumber: coach.coachNumber,
+                coachType: coach.coachType,
+                seats: (coach.seats || []).map((seat) => ({
+                    id: seat.id,
+                    seatNumber: seat.seatNumber,
+                    seatLabel: seat.seatLabel,
+                    seatType: seat.seatType
+                }))
+            }))
+        };
+
         await tx.adminOutbox.create({
             data: {
                 aggregateType: "Schedule",
@@ -295,7 +314,7 @@ const createSchedule = async ({ trainId, departureDate, status }: CreateSchedule
                 eventType: "SCHEDULE_CREATED",
                 payload: {
                     schedule: createdSchedule,
-                    train
+                    train: serializedTrain
                 } as any
             }
         });
@@ -385,6 +404,9 @@ const createFares = async (trainId: string, fares: Array<{ fromStationId: string
 }
 
 const getAllTrains = async () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
     return await prisma.train.findMany({
         include: {
             coaches: {
@@ -395,7 +417,8 @@ const getAllTrains = async () => {
             },
             fares: true,
             schedules: {
-                orderBy: { departureDate: 'desc' }
+                where: { departureDate: { gte: today } },
+                orderBy: { departureDate: 'asc' }
             },
             route: {
                 include: {
@@ -426,8 +449,15 @@ const searchTrains = async (fromCode: string, toCode: string, date: string) => {
     }
 
     // 2. Query starts from Schedule — only ACTIVE schedules on this exact date
+    //    Reject past dates upfront to avoid returning stale results
     //    Join train → route → stops to check both stations exist in forward order
     //    This is the narrowest starting point and avoids loading all trains
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (departureDate < today) {
+        return { from: { code: fromStation.code, name: fromStation.name }, to: { code: toStation.code, name: toStation.name }, date, count: 0, trains: [] };
+    }
+
     const schedules = await prisma.schedule.findMany({
         where: {
             departureDate,
