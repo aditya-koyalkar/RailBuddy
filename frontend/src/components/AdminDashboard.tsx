@@ -277,10 +277,16 @@ export const AdminDashboard: React.FC = () => {
       }
     }
 
-    const faresList = [
-      { fromStationId: fareFromStn, toStationId: fareToStn, coachType: 'GENERAL', fare: Number(fareGeneral) },
-      { fromStationId: fareFromStn, toStationId: fareToStn, coachType: 'FIRST_CLASS', fare: Number(fareFirstClass) },
-    ];
+    const coachTypes = Array.from(
+      new Set((selectedTrain?.coaches || []).map((c: any) => c.coachType).filter(Boolean))
+    );
+
+    const faresList = (coachTypes.length > 0 ? coachTypes : ['GENERAL', 'FIRST_CLASS']).map((ct: any) => ({
+      fromStationId: fareFromStn,
+      toStationId: fareToStn,
+      coachType: ct,
+      fare: ct === 'FIRST_CLASS' ? Number(fareFirstClass) : Number(fareGeneral),
+    }));
 
     try {
       await adminApi.createFares({
@@ -290,8 +296,6 @@ export const AdminDashboard: React.FC = () => {
       setSuccessMsg('Train fares saved successfully!');
       setFareFromStn('');
       setFareToStn('');
-      setFareGeneral(150);
-      setFareFirstClass(350);
       fetchAdminData();
     } catch (err: any) {
       setError(err.message || 'Failed to initialize fares.');

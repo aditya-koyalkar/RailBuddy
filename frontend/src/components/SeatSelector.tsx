@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { inventoryApi } from '../services/api';
 import { User as UserIcon, Check, Lock, AlertCircle, ArrowLeft, Shield, Sparkles, RefreshCw, Train } from 'lucide-react';
+import { formatCoachType } from '../utils/formatters';
 
 interface SeatSelectorProps {
   trainData: any;
@@ -17,15 +18,15 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
   const [selectedSeatIds, setSelectedSeatIds] = useState<string[]>([]);
   const [passengers, setPassengers] = useState<Array<{ name: string; age: number; gender: string }>>([]);
   const [selectedClass, setSelectedClass] = useState<string>(
-    trainData.selectedClass || '3A'
+    trainData?.selectedClass || ''
   );
   const [activeCoach, setActiveCoach] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const scheduleId = trainData.scheduleId;
-  const fromSeq = trainData.fromSequence || trainData.fromSeq || 1;
-  const toSeq = trainData.toSequence || trainData.toSeq || 2;
+  const scheduleId = trainData?.scheduleId;
+  const fromSeq = trainData?.from?.sequence || trainData?.fromSequence || trainData?.fromSeq || 1;
+  const toSeq = trainData?.to?.sequence || trainData?.toSequence || trainData?.toSeq || 2;
 
   const fetchSeats = async () => {
     setLoading(true);
@@ -57,11 +58,17 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
     fetchSeats();
   }, [scheduleId]);
 
-  // Extract all distinct coach types available in this train
+  // Extract all distinct coach types available in this train directly from backend data
   const availableClasses = useMemo(() => {
-    const types = Array.from(new Set(allSeats.map((s) => s.coachType).filter(Boolean)));
-    return types.length > 0 ? types : ['3A', '2A', 'SL', 'FIRST_CLASS', 'GENERAL'];
+    return Array.from(new Set(allSeats.map((s) => s.coachType).filter(Boolean)));
   }, [allSeats]);
+
+  // Automatically select the first available coach type if initial selectedClass is empty or invalid
+  useEffect(() => {
+    if (availableClasses.length > 0 && (!selectedClass || !availableClasses.includes(selectedClass))) {
+      setSelectedClass(availableClasses[0]);
+    }
+  }, [availableClasses, selectedClass]);
 
   // Filter seats matching current selected class
   const classSeats = useMemo(() => {
@@ -69,16 +76,15 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
     const filtered = allSeats.filter(
       (s) => s.coachType?.toUpperCase() === selectedClass.toUpperCase()
     );
-    // If no seats match exact class filter (e.g. formatting differences), return all seats
     return filtered.length > 0 ? filtered : allSeats;
   }, [allSeats, selectedClass]);
 
-  // List of coaches for the selected class
+  // List of coach numbers for the selected class (derived strictly from backend data)
   const classCoaches = useMemo(() => {
     return Array.from(new Set(classSeats.map((s) => s.coachNumber))).filter(Boolean);
   }, [classSeats]);
 
-  // Set default active coach when classSeats / classCoaches changes
+  // Set default active coach when classCoaches changes
   useEffect(() => {
     if (classCoaches.length > 0 && !classCoaches.includes(activeCoach)) {
       setActiveCoach(classCoaches[0]);
@@ -90,7 +96,6 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
     return classSeats.filter((s) => s.coachNumber === activeCoach);
   }, [classSeats, activeCoach]);
 
-  // Handle class tab switch
   const handleClassSwitch = (cls: string) => {
     setSelectedClass(cls);
     setSelectedSeatIds([]);
@@ -118,7 +123,6 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
     }
   };
 
-  // Industry Standard: Quick Auto-Select Available Seats
   const handleQuickAutoSelect = (count: number) => {
     const available = visibleCoachSeats.filter((s) => s.segmentStatus === 'AVAILABLE');
     const toSelect = available.slice(0, Math.min(count, 6));
@@ -148,20 +152,20 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
     }
 
     const selectedSeatObjects = allSeats.filter((s) => selectedSeatIds.includes(s.seatId));
-    const farePerSeat = trainData.fareAmount || 1100;
+    const farePerSeat = Number(trainData?.fareAmount) || 0;
     const totalAmount = selectedSeatObjects.length * farePerSeat;
 
     const payload = {
       scheduleId,
-      trainId: trainData.trainId || trainData.id,
-      trainNumber: trainData.trainNumber,
-      trainName: trainData.trainName || trainData.name,
-      fromStationId: trainData.fromStationId || 'stn-from-id',
-      toStationId: trainData.toStationId || 'stn-to-id',
+      trainId: trainData?.trainId || trainData?.id,
+      trainNumber: trainData?.trainNumber,
+      trainName: trainData?.trainName || trainData?.name,
+      fromStationId: trainData?.from?.stationId || trainData?.fromStationId,
+      toStationId: trainData?.to?.stationId || trainData?.toStationId,
       fromSeq,
       toSeq,
-      fromCode: trainData.fromStationCode || 'NDLS',
-      toCode: trainData.toStationCode || 'BCT',
+      fromCode: trainData?.from?.code || trainData?.fromStationCode,
+      toCode: trainData?.to?.code || trainData?.toStationCode,
       seatIds: selectedSeatIds,
       seats: selectedSeatObjects,
       passengers,
@@ -172,7 +176,7 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
     onProceedToBooking(payload);
   };
 
-  // Group coach seats into bays (compartments of 8 seats) for standard train layout
+  // Group coach seats into bays (compartments of 8 seats) for standard coach layout
   const seatBays = useMemo(() => {
     const bays: any[][] = [];
     for (let i = 0; i < visibleCoachSeats.length; i += 8) {
@@ -197,51 +201,55 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
           <p className="text-xs text-slate-400 font-medium">Selected Train & Class</p>
           <p className="text-base font-bold text-white flex items-center justify-end gap-2">
             <Train className="w-4 h-4 text-blue-400" />
-            {trainData.trainName || trainData.name} (#{trainData.trainNumber})
-            <span className="ml-2 text-xs px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">
-              {selectedClass}
-            </span>
+            {trainData?.trainName || trainData?.name} (#{trainData?.trainNumber})
+            {selectedClass && (
+              <span className="ml-2 text-xs px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                {formatCoachType(selectedClass)}
+              </span>
+            )}
           </p>
         </div>
       </div>
 
       {/* Class Selection Navigation Bar */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 mb-6 flex items-center justify-between flex-wrap gap-4 shadow-lg">
-        <div className="flex items-center gap-2 overflow-x-auto">
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2">
-            Class Filter:
-          </span>
-          {availableClasses.map((cls) => (
-            <button
-              key={cls}
-              onClick={() => handleClassSwitch(cls)}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                selectedClass === cls
-                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
-                  : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
-              }`}
-            >
-              {cls}
-            </button>
-          ))}
-        </div>
-
-        {/* Quick Auto-Select Controls */}
-        {visibleCoachSeats.length > 0 && (
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-slate-400">Quick Select:</span>
-            {[1, 2, 4].map((num) => (
+      {availableClasses.length > 0 && (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 mb-6 flex items-center justify-between flex-wrap gap-4 shadow-lg">
+          <div className="flex items-center gap-2 overflow-x-auto">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2">
+              Class Filter:
+            </span>
+            {availableClasses.map((cls) => (
               <button
-                key={num}
-                onClick={() => handleQuickAutoSelect(num)}
-                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-blue-400 border border-slate-700 hover:border-blue-500 rounded-lg text-xs font-bold transition-all"
+                key={cls}
+                onClick={() => handleClassSwitch(cls)}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                  selectedClass === cls
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
+                    : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
+                }`}
               >
-                +{num} {num === 1 ? 'Seat' : 'Seats'}
+                {formatCoachType(cls)}
               </button>
             ))}
           </div>
-        )}
-      </div>
+
+          {/* Quick Auto-Select Controls */}
+          {visibleCoachSeats.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-slate-400">Quick Select:</span>
+              {[1, 2, 4].map((num) => (
+                <button
+                  key={num}
+                  onClick={() => handleQuickAutoSelect(num)}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-blue-400 border border-slate-700 hover:border-blue-500 rounded-lg text-xs font-bold transition-all"
+                >
+                  +{num} {num === 1 ? 'Seat' : 'Seats'}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Loading State */}
       {loading ? (
@@ -289,11 +297,11 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
                 </span>
               </div>
 
-              {/* Coach Switcher Tabs */}
+              {/* Coach Switcher Tabs (Coach names strictly from backend data) */}
               {classCoaches.length > 0 && (
                 <div className="flex items-center gap-2 border-b border-slate-800 pb-4 mb-4 overflow-x-auto">
                   <span className="text-xs text-slate-400 font-semibold uppercase mr-2">
-                    {selectedClass} Coach:
+                    {formatCoachType(selectedClass)} Coach:
                   </span>
                   {classCoaches.map((c) => (
                     <button
@@ -339,7 +347,7 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
                     </div>
 
                     <div className="grid grid-cols-12 gap-3 items-center">
-                      {/* Left Berths (Lower, Middle, Upper) */}
+                      {/* Left Berths */}
                       <div className="col-span-7 grid grid-cols-3 gap-2">
                         {bay.slice(0, 6).map((seat) => {
                           const isSelected = selectedSeatIds.includes(seat.seatId);
@@ -359,7 +367,7 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
                               }`}
                             >
                               <span className="text-[9px] text-slate-400">#{seat.seatNumber}</span>
-                              <span className="text-xs font-black">{seat.seatType || 'LB'}</span>
+                              <span className="text-xs font-black">{seat.seatType || `#${seat.seatNumber}`}</span>
                               {isSelected ? (
                                 <Check className="w-3 h-3 text-white absolute top-1 right-1" />
                               ) : !isAvailable ? (
@@ -377,7 +385,7 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
                         </span>
                       </div>
 
-                      {/* Right Berths (Side Lower, Side Upper) */}
+                      {/* Right Berths */}
                       <div className="col-span-4 grid grid-cols-2 gap-2">
                         {bay.slice(6, 8).map((seat) => {
                           const isSelected = selectedSeatIds.includes(seat.seatId);
@@ -397,7 +405,7 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
                               }`}
                             >
                               <span className="text-[9px] text-slate-400">#{seat.seatNumber}</span>
-                              <span className="text-xs font-black">{seat.seatType || 'SL'}</span>
+                              <span className="text-xs font-black">{seat.seatType || `#${seat.seatNumber}`}</span>
                               {isSelected ? (
                                 <Check className="w-3 h-3 text-white absolute top-1 right-1" />
                               ) : !isAvailable ? (
@@ -433,7 +441,7 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
                         <div className="sm:col-span-3">
                           <p className="text-xs font-bold text-blue-400">Passenger #{idx + 1}</p>
                           <p className="text-xs text-slate-300 font-mono">
-                            Coach {seatObj?.coachNumber || activeCoach} - Seat #{seatObj?.seatNumber} ({seatObj?.seatType})
+                            Coach {seatObj?.coachNumber || activeCoach} - Seat #{seatObj?.seatNumber} ({seatObj?.seatType || 'Seat'})
                           </p>
                         </div>
 
@@ -495,11 +503,11 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
               <div className="space-y-3 border-b border-slate-800 pb-4 text-xs">
                 <div className="flex items-center justify-between text-slate-400">
                   <span>Selected Class</span>
-                  <span className="font-bold text-white">{selectedClass}</span>
+                  <span className="font-bold text-white">{formatCoachType(selectedClass) || 'N/A'}</span>
                 </div>
                 <div className="flex items-center justify-between text-slate-400">
                   <span>Base Fare per seat</span>
-                  <span className="font-semibold text-white">₹{trainData.fareAmount || 1100}</span>
+                  <span className="font-semibold text-white">₹{Number(trainData?.fareAmount) || 0}</span>
                 </div>
                 <div className="flex items-center justify-between text-slate-400">
                   <span>Seats Selected</span>
@@ -511,7 +519,7 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
               <div className="my-4 flex items-baseline justify-between">
                 <span className="text-sm font-semibold text-slate-300">Total Payable</span>
                 <span className="text-2xl font-black text-emerald-400">
-                  ₹{(selectedSeatIds.length * (trainData.fareAmount || 1100)).toLocaleString()}
+                  ₹{(selectedSeatIds.length * (Number(trainData?.fareAmount) || 0)).toLocaleString()}
                 </span>
               </div>
 
@@ -525,7 +533,7 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
               </button>
 
               <p className="text-[11px] text-slate-400 text-center mt-3 flex items-center justify-center gap-1">
-                <Shield className="w-3 h-3 text-blue-400" />
+                <Shield className="w-3.5 h-3.5 text-blue-400" />
                 Seats will be locked in Redis for 10 minutes
               </p>
             </div>

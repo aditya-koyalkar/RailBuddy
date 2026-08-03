@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { searchApi, inventoryApi } from '../services/api';
 import { Train, Clock, ArrowRight, Shield, AlertCircle, RefreshCw, ChevronRight } from 'lucide-react';
+import { formatCoachType } from '../utils/formatters';
 
 interface SearchResultsProps {
   fromCode: string;
@@ -245,7 +246,9 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
                               className="p-3.5 rounded-xl bg-slate-800/60 border border-slate-700/80 hover:border-blue-500 cursor-pointer transition-all hover:scale-[1.02] flex flex-col justify-between group"
                             >
                               <div className="flex items-center justify-between">
-                                <span className="font-bold text-sm text-white group-hover:text-blue-400 transition-colors">{cls}</span>
+                                <span className="font-bold text-sm text-white group-hover:text-blue-400 transition-colors">
+                                  {formatCoachType(cls)}
+                                </span>
                                 <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
                                   Available
                                 </span>
