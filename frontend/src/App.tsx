@@ -24,6 +24,7 @@ function MainLayout() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/search" element={<SearchResultsPage />} />
+          <Route path="/select-seats/:scheduleId" element={<SeatSelectionPage />} />
           <Route path="/select-seats" element={<SeatSelectionPage />} />
           <Route path="/confirmation" element={<ConfirmationPage />} />
           <Route path="/my-bookings" element={<MyBookingsPage />} />

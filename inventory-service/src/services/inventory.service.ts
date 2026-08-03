@@ -614,7 +614,14 @@ export const cancelBooking = async (
     return { count: result.count };
 };
 
-export const getSeatsByIds = async (scheduleId: string, seatIds: string[], fromSeq: number, toSeq: number) => {
+export const getSeatsByIds = async (
+    scheduleId: string,
+    seatIds: string[],
+    fromSeq: number,
+    toSeq: number,
+    coachType?: string,
+    coachNumber?: string
+) => {
     const fromSeqNum = Number(fromSeq);
     const toSeqNum = Number(toSeq);
 
@@ -630,7 +637,9 @@ export const getSeatsByIds = async (scheduleId: string, seatIds: string[], fromS
     const seats = await prisma.scheduleSeat.findMany({
         where: {
             scheduleId,
-            ...(fetchAll ? {} : { seatId: { in: seatIds } })
+            ...(fetchAll ? {} : { seatId: { in: seatIds } }),
+            ...(coachType ? { coachType: { equals: coachType, mode: 'insensitive' } } : {}),
+            ...(coachNumber ? { coachNumber: coachNumber } : {})
         },
         orderBy: [{ coachNumber: 'asc' }, { seatNumber: 'asc' }]
     });

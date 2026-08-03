@@ -77,10 +77,19 @@ export const inventoryApi = {
   getAvailability: (scheduleId: string) =>
     request<{ success: boolean; data: any }>(`/inventory/schedules/${scheduleId}/availability`),
 
-  getSeats: (scheduleId: string, seatIds: string[], fromSeq: number, toSeq: number) => {
+  getSeats: (
+    scheduleId: string,
+    seatIds: string[] = [],
+    fromSeq: number = 1,
+    toSeq: number = 2,
+    coachType?: string,
+    coachNumber?: string
+  ) => {
     const seatQuery = seatIds.length > 0 ? `&seatIds=${seatIds.join(',')}` : '';
+    const coachTypeQuery = coachType ? `&coachType=${encodeURIComponent(coachType)}` : '';
+    const coachNumberQuery = coachNumber ? `&coachNumber=${encodeURIComponent(coachNumber)}` : '';
     return request<{ success: boolean; data: any[] }>(
-      `/inventory/schedules/${scheduleId}/seats?fromSeq=${fromSeq}&toSeq=${toSeq}${seatQuery}`
+      `/inventory/schedules/${scheduleId}/seats?fromSeq=${fromSeq}&toSeq=${toSeq}${seatQuery}${coachTypeQuery}${coachNumberQuery}`
     );
   },
 

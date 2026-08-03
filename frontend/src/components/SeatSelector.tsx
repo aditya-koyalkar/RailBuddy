@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { inventoryApi } from '../services/api';
-import { User as UserIcon, Check, Lock, AlertCircle, ArrowLeft, Shield, Sparkles, RefreshCw, Train } from 'lucide-react';
+import { User as UserIcon, Check, Lock, AlertCircle, ArrowLeft, Shield, Sparkles, RefreshCw, Train, Layers } from 'lucide-react';
 import { formatCoachType } from '../utils/formatters';
 
 interface SeatSelectorProps {
@@ -17,10 +17,8 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
   const [allSeats, setAllSeats] = useState<any[]>([]);
   const [selectedSeatIds, setSelectedSeatIds] = useState<string[]>([]);
   const [passengers, setPassengers] = useState<Array<{ name: string; age: number; gender: string }>>([]);
-  const [selectedClass, setSelectedClass] = useState<string>(
-    trainData?.selectedClass || ''
-  );
-  const [activeCoach, setActiveCoach] = useState<string>('');
+  const [selectedFilter, setSelectedFilter] = useState<string>('ALL');
+  const [availableCoachTypes, setAvailableCoachTypes] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,23 +26,45 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
   const fromSeq = trainData?.from?.sequence || trainData?.fromSequence || trainData?.fromSeq || 1;
   const toSeq = trainData?.to?.sequence || trainData?.toSequence || trainData?.toSeq || 2;
 
-  const fetchSeats = async () => {
+  const fetchSeats = async (filterCoachType?: string, filterCoachNumber?: string) => {
     setLoading(true);
     setError(null);
     try {
       if (!scheduleId) {
         throw new Error('Schedule ID is missing for this train selection.');
       }
-      const res = await inventoryApi.getSeats(scheduleId, [], fromSeq, toSeq);
+      const res = await inventoryApi.getSeats(
+        scheduleId,
+        [],
+        fromSeq,
+        toSeq,
+        filterCoachType,
+        filterCoachNumber
+      );
       const seatList = res.data || [];
-      
+
       if (!Array.isArray(seatList) || seatList.length === 0) {
-        setError('No seat inventory has been initialized for this train schedule yet.');
+        if (!filterCoachNumber && !filterCoachType) {
+          setError('No seat inventory has been initialized for this train schedule yet.');
+        }
         setAllSeats([]);
         return;
       }
-      
+
       setAllSeats(seatList);
+
+      // On initial load, populate persistent coach types and select default class
+      if (availableCoachTypes.length === 0) {
+        const types = Array.from(new Set(seatList.map((s) => s.coachType).filter(Boolean)));
+        setAvailableCoachTypes(types);
+
+        if (types.length > 0) {
+          const firstType = types[0];
+          setSelectedFilter(firstType);
+          const initialRes = await inventoryApi.getSeats(scheduleId, [], fromSeq, toSeq, firstType);
+          if (initialRes.data) setAllSeats(initialRes.data);
+        }
+      }
     } catch (err: any) {
       console.error('Error fetching inventory seats:', err);
       setError(err.message || 'Failed to load seat inventory from database.');
@@ -58,48 +78,36 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
     fetchSeats();
   }, [scheduleId]);
 
-  // Extract all distinct coach types available in this train directly from backend data
-  const availableClasses = useMemo(() => {
-    return Array.from(new Set(allSeats.map((s) => s.coachType).filter(Boolean)));
+  // Real-time seat statistics for the currently loaded seats
+  const seatStats = useMemo(() => {
+    let available = 0;
+    let locked = 0;
+    let booked = 0;
+
+    for (const s of allSeats) {
+      if (s.segmentStatus === 'AVAILABLE') available++;
+      else if (s.segmentStatus === 'LOCKED') locked++;
+      else if (s.segmentStatus === 'BOOKED') booked++;
+    }
+
+    return {
+      total: allSeats.length,
+      available,
+      locked,
+      booked,
+    };
   }, [allSeats]);
 
-  // Automatically select the first available coach type if initial selectedClass is empty or invalid
-  useEffect(() => {
-    if (availableClasses.length > 0 && (!selectedClass || !availableClasses.includes(selectedClass))) {
-      setSelectedClass(availableClasses[0]);
-    }
-  }, [availableClasses, selectedClass]);
-
-  // Filter seats matching current selected class
-  const classSeats = useMemo(() => {
-    if (!selectedClass) return allSeats;
-    const filtered = allSeats.filter(
-      (s) => s.coachType?.toUpperCase() === selectedClass.toUpperCase()
-    );
-    return filtered.length > 0 ? filtered : allSeats;
-  }, [allSeats, selectedClass]);
-
-  // List of coach numbers for the selected class (derived strictly from backend data)
-  const classCoaches = useMemo(() => {
-    return Array.from(new Set(classSeats.map((s) => s.coachNumber))).filter(Boolean);
-  }, [classSeats]);
-
-  // Set default active coach when classCoaches changes
-  useEffect(() => {
-    if (classCoaches.length > 0 && !classCoaches.includes(activeCoach)) {
-      setActiveCoach(classCoaches[0]);
-    }
-  }, [classCoaches, activeCoach]);
-
-  // Seats in the active coach
-  const visibleCoachSeats = useMemo(() => {
-    return classSeats.filter((s) => s.coachNumber === activeCoach);
-  }, [classSeats, activeCoach]);
-
-  const handleClassSwitch = (cls: string) => {
-    setSelectedClass(cls);
+  const handleFilterClick = (cType?: string) => {
     setSelectedSeatIds([]);
     setPassengers([]);
+    if (!cType) {
+      setSelectedFilter('ALL');
+      fetchSeats(undefined, undefined);
+    } else {
+      setSelectedFilter(cType);
+      fetchSeats(cType, undefined);
+    }
   };
 
   const handleSeatClick = (seat: any) => {
@@ -124,7 +132,7 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
   };
 
   const handleQuickAutoSelect = (count: number) => {
-    const available = visibleCoachSeats.filter((s) => s.segmentStatus === 'AVAILABLE');
+    const available = allSeats.filter((s) => s.segmentStatus === 'AVAILABLE');
     const toSelect = available.slice(0, Math.min(count, 6));
     const ids = toSelect.map((s) => s.seatId);
     setSelectedSeatIds(ids);
@@ -176,14 +184,14 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
     onProceedToBooking(payload);
   };
 
-  // Group coach seats into bays (compartments of 8 seats) for standard coach layout
+  // Group loaded coach seats into bays (compartments of 8 seats) for standard coach layout
   const seatBays = useMemo(() => {
     const bays: any[][] = [];
-    for (let i = 0; i < visibleCoachSeats.length; i += 8) {
-      bays.push(visibleCoachSeats.slice(i, i + 8));
+    for (let i = 0; i < allSeats.length; i += 8) {
+      bays.push(allSeats.slice(i, i + 8));
     }
     return bays;
-  }, [visibleCoachSeats]);
+  }, [allSeats]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
@@ -198,43 +206,44 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
         </button>
 
         <div className="text-right">
-          <p className="text-xs text-slate-400 font-medium">Selected Train & Class</p>
+          <p className="text-xs text-slate-400 font-medium">Selected Train & Schedule</p>
           <p className="text-base font-bold text-white flex items-center justify-end gap-2">
             <Train className="w-4 h-4 text-blue-400" />
             {trainData?.trainName || trainData?.name} (#{trainData?.trainNumber})
-            {selectedClass && (
-              <span className="ml-2 text-xs px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                {formatCoachType(selectedClass)}
-              </span>
-            )}
           </p>
         </div>
       </div>
 
-      {/* Class Selection Navigation Bar */}
-      {availableClasses.length > 0 && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 mb-6 flex items-center justify-between flex-wrap gap-4 shadow-lg">
+      {/* Persistent Coach Type Filter Selector */}
+      {availableCoachTypes.length > 0 && (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 mb-6 flex items-center justify-between flex-wrap gap-4 shadow-xl">
           <div className="flex items-center gap-2 overflow-x-auto">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2">
-              Class Filter:
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2 flex items-center gap-1.5">
+              <Layers className="w-4 h-4 text-blue-400" />
+              <span>Select Coach Type:</span>
             </span>
-            {availableClasses.map((cls) => (
-              <button
-                key={cls}
-                onClick={() => handleClassSwitch(cls)}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                  selectedClass === cls
-                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
-                    : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
-                }`}
-              >
-                {formatCoachType(cls)}
-              </button>
-            ))}
+
+            {/* Coach Type Filter Tabs (Always persistent so unselected options stay visible) */}
+            {availableCoachTypes.map((cType) => {
+              const isSelected = selectedFilter === cType;
+              return (
+                <button
+                  key={cType}
+                  onClick={() => handleFilterClick(cType)}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                    isSelected
+                      ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25 scale-[1.02]'
+                      : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
+                  }`}
+                >
+                  {formatCoachType(cType)}
+                </button>
+              );
+            })}
           </div>
 
           {/* Quick Auto-Select Controls */}
-          {visibleCoachSeats.length > 0 && (
+          {allSeats.length > 0 && (
             <div className="flex items-center gap-2">
               <span className="text-xs font-medium text-slate-400">Quick Select:</span>
               {[1, 2, 4].map((num) => (
@@ -255,8 +264,8 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
       {loading ? (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-16 text-center shadow-xl">
           <div className="w-10 h-10 border-3 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-sm font-semibold text-white">Loading Real-Time Seat Availability...</p>
-          <p className="text-xs text-slate-400 mt-1">Connecting to inventory microservice</p>
+          <p className="text-sm font-semibold text-white">Loading Real-Time Seat Inventory...</p>
+          <p className="text-xs text-slate-400 mt-1">Fetching live seat segment statuses from database</p>
         </div>
       ) : error || allSeats.length === 0 ? (
         /* Explicit Clean Error State - NO Mock Data */
@@ -276,7 +285,7 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
               Back to Search
             </button>
             <button
-              onClick={fetchSeats}
+              onClick={() => fetchSeats(selectedFilter === 'ALL' ? undefined : selectedFilter)}
               className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-2"
             >
               <RefreshCw className="w-3.5 h-3.5" />
@@ -285,65 +294,83 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
           </div>
         </div>
       ) : (
-        /* Main Grid: Left Seat Map, Right Booking Summary */
+        /* Main Grid: Left Interactive Seat Layout & Right Summary */
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* Left: Coach Tabs & Compartment Map */}
+          {/* Left: Seat Map Layout & Real-time Stats */}
           <div className="lg:col-span-8 space-y-6">
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold text-white">Interactive Coach Seat Map</h3>
-                <span className="text-xs font-semibold text-blue-400 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20">
-                  Segment: Seq {fromSeq} → {toSeq}
-                </span>
-              </div>
+              
+              {/* Header & Stats Bar */}
+              <div className="border-b border-slate-800 pb-4 mb-4">
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div>
+                    <h4 className="text-base font-extrabold text-white flex items-center gap-2">
+                      <span>Interactive Seat Layout</span>
+                      <span className="text-xs font-semibold text-blue-300 bg-blue-500/20 px-2.5 py-0.5 rounded-full border border-blue-500/30">
+                        {formatCoachType(selectedFilter)}
+                      </span>
+                    </h4>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Showing {seatStats.total} Seats total across segment Seq {fromSeq} → {toSeq}
+                    </p>
+                  </div>
+                </div>
 
-              {/* Coach Switcher Tabs (Coach names strictly from backend data) */}
-              {classCoaches.length > 0 && (
-                <div className="flex items-center gap-2 border-b border-slate-800 pb-4 mb-4 overflow-x-auto">
-                  <span className="text-xs text-slate-400 font-semibold uppercase mr-2">
-                    {formatCoachType(selectedClass)} Coach:
-                  </span>
-                  {classCoaches.map((c) => (
-                    <button
-                      key={c}
-                      onClick={() => setActiveCoach(c)}
-                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                        activeCoach === c
-                          ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
-                          : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
-                      }`}
-                    >
-                      Coach {c}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Seat Legend */}
-              <div className="flex items-center gap-6 my-4 text-xs font-medium text-slate-400 border-b border-slate-800/60 pb-4">
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded bg-slate-800 border border-emerald-500/60" />
-                  <span>Available</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded bg-blue-600 border border-blue-400" />
-                  <span>Selected</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded bg-slate-950 border border-slate-800 text-slate-600" />
-                  <span>Booked/Locked</span>
+                {/* Real-time Status Breakdown Pill Bar */}
+                <div className="grid grid-cols-3 gap-3 mt-4">
+                  <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-between">
+                    <span className="text-xs font-semibold text-emerald-400">🟢 Available</span>
+                    <span className="text-sm font-bold text-emerald-300">{seatStats.available}</span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-between">
+                    <span className="text-xs font-semibold text-amber-400">🟠 Locked</span>
+                    <span className="text-sm font-bold text-amber-300">{seatStats.locked}</span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-between">
+                    <span className="text-xs font-semibold text-rose-400">🔴 Booked</span>
+                    <span className="text-sm font-bold text-rose-300">{seatStats.booked}</span>
+                  </div>
                 </div>
               </div>
 
-              {/* Compartment/Bay Layout View */}
+              {/* Seat Legend with Differentiated Visual Statuses */}
+              <div className="flex items-center gap-6 my-4 text-xs font-medium text-slate-400 border-b border-slate-800/60 pb-4 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded bg-slate-800/90 border border-emerald-500/80" />
+                  <span className="text-slate-200">Available</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded bg-gradient-to-tr from-blue-600 to-indigo-600 border border-blue-400" />
+                  <span className="text-slate-200">Selected ({selectedSeatIds.length})</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded bg-amber-950/80 border border-amber-500/50 flex items-center justify-center">
+                    <Lock className="w-2.5 h-2.5 text-amber-400" />
+                  </div>
+                  <span className="text-slate-300">Locked (In Checkout)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded bg-rose-950/80 border border-rose-500/50 flex items-center justify-center">
+                    <Lock className="w-2.5 h-2.5 text-rose-400" />
+                  </div>
+                  <span className="text-slate-300">Booked (Reserved)</span>
+                </div>
+              </div>
+
+              {/* Compartment/Bay Visual Layout View */}
               <div className="space-y-4 max-h-[520px] overflow-y-auto pr-2">
                 {seatBays.map((bay, bayIdx) => (
                   <div
                     key={bayIdx}
-                    className="p-4 bg-slate-950/70 border border-slate-800 rounded-xl relative"
+                    className="p-4 bg-slate-950/80 border border-slate-800/90 rounded-xl relative"
                   >
-                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
-                      Compartment Bay #{bayIdx + 1}
+                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center justify-between">
+                      <span>Compartment Bay #{bayIdx + 1}</span>
+                      {bay[0]?.coachNumber && (
+                        <span className="text-[9px] text-blue-400 font-mono">
+                          Coach {bay[0].coachNumber}
+                        </span>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-12 gap-3 items-center">
@@ -351,27 +378,46 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
                       <div className="col-span-7 grid grid-cols-3 gap-2">
                         {bay.slice(0, 6).map((seat) => {
                           const isSelected = selectedSeatIds.includes(seat.seatId);
-                          const isAvailable = seat.segmentStatus === 'AVAILABLE';
+                          const status = seat.segmentStatus;
+                          const isAvailable = status === 'AVAILABLE';
+                          const isLocked = status === 'LOCKED';
+                          const isBooked = status === 'BOOKED';
 
                           return (
                             <button
                               key={seat.seatId}
                               disabled={!isAvailable}
                               onClick={() => handleSeatClick(seat)}
+                              title={
+                                isLocked
+                                  ? `Seat ${seat.seatNumber} in Coach ${seat.coachNumber} is locked in another user's active checkout session`
+                                  : isBooked
+                                  ? `Seat ${seat.seatNumber} in Coach ${seat.coachNumber} is fully booked`
+                                  : `Coach ${seat.coachNumber} - Seat ${seat.seatNumber} (${seat.seatType || 'Berth'})`
+                              }
                               className={`relative p-2.5 rounded-xl border font-mono text-xs font-bold transition-all flex flex-col items-center justify-between h-14 ${
                                 isSelected
                                   ? 'bg-gradient-to-tr from-blue-600 to-indigo-600 border-blue-400 text-white shadow-lg shadow-blue-500/30 scale-105'
                                   : isAvailable
-                                  ? 'bg-slate-800/80 border-slate-700 hover:border-emerald-400 text-slate-200 hover:scale-105'
-                                  : 'bg-slate-950 border-slate-800/50 text-slate-600 cursor-not-allowed opacity-50'
+                                  ? 'bg-slate-800/80 border-emerald-500/60 hover:border-emerald-400 text-slate-100 hover:scale-105 shadow-sm'
+                                  : isLocked
+                                  ? 'bg-amber-950/40 border-amber-500/40 text-amber-300 cursor-not-allowed opacity-80'
+                                  : 'bg-rose-950/40 border-rose-500/40 text-rose-300 cursor-not-allowed opacity-70'
                               }`}
                             >
-                              <span className="text-[9px] text-slate-400">#{seat.seatNumber}</span>
-                              <span className="text-xs font-black">{seat.seatType || `#${seat.seatNumber}`}</span>
+                              <span className="text-[9px] text-slate-400">{seat.coachNumber}-#{seat.seatNumber}</span>
+                              <span className="text-[11px] font-black">{seat.seatType || `#${seat.seatNumber}`}</span>
+
                               {isSelected ? (
                                 <Check className="w-3 h-3 text-white absolute top-1 right-1" />
-                              ) : !isAvailable ? (
-                                <Lock className="w-3 h-3 text-slate-600 absolute top-1 right-1" />
+                              ) : isLocked ? (
+                                <span className="absolute top-1 right-1 flex items-center gap-0.5 text-[8px] font-extrabold text-amber-400 bg-amber-500/20 px-1 rounded">
+                                  <Lock className="w-2.5 h-2.5" />
+                                </span>
+                              ) : isBooked ? (
+                                <span className="absolute top-1 right-1 flex items-center gap-0.5 text-[8px] font-extrabold text-rose-400 bg-rose-500/20 px-1 rounded">
+                                  <Lock className="w-2.5 h-2.5" />
+                                </span>
                               ) : null}
                             </button>
                           );
@@ -389,27 +435,46 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
                       <div className="col-span-4 grid grid-cols-2 gap-2">
                         {bay.slice(6, 8).map((seat) => {
                           const isSelected = selectedSeatIds.includes(seat.seatId);
-                          const isAvailable = seat.segmentStatus === 'AVAILABLE';
+                          const status = seat.segmentStatus;
+                          const isAvailable = status === 'AVAILABLE';
+                          const isLocked = status === 'LOCKED';
+                          const isBooked = status === 'BOOKED';
 
                           return (
                             <button
                               key={seat.seatId}
                               disabled={!isAvailable}
                               onClick={() => handleSeatClick(seat)}
+                              title={
+                                isLocked
+                                  ? `Seat ${seat.seatNumber} in Coach ${seat.coachNumber} is locked in another user's active checkout session`
+                                  : isBooked
+                                  ? `Seat ${seat.seatNumber} in Coach ${seat.coachNumber} is fully booked`
+                                  : `Coach ${seat.coachNumber} - Seat ${seat.seatNumber} (${seat.seatType || 'Berth'})`
+                              }
                               className={`relative p-2.5 rounded-xl border font-mono text-xs font-bold transition-all flex flex-col items-center justify-between h-14 ${
                                 isSelected
                                   ? 'bg-gradient-to-tr from-blue-600 to-indigo-600 border-blue-400 text-white shadow-lg shadow-blue-500/30 scale-105'
                                   : isAvailable
-                                  ? 'bg-slate-800/80 border-slate-700 hover:border-emerald-400 text-slate-200 hover:scale-105'
-                                  : 'bg-slate-950 border-slate-800/50 text-slate-600 cursor-not-allowed opacity-50'
+                                  ? 'bg-slate-800/80 border-emerald-500/60 hover:border-emerald-400 text-slate-100 hover:scale-105 shadow-sm'
+                                  : isLocked
+                                  ? 'bg-amber-950/40 border-amber-500/40 text-amber-300 cursor-not-allowed opacity-80'
+                                  : 'bg-rose-950/40 border-rose-500/40 text-rose-300 cursor-not-allowed opacity-70'
                               }`}
                             >
-                              <span className="text-[9px] text-slate-400">#{seat.seatNumber}</span>
-                              <span className="text-xs font-black">{seat.seatType || `#${seat.seatNumber}`}</span>
+                              <span className="text-[9px] text-slate-400">{seat.coachNumber}-#{seat.seatNumber}</span>
+                              <span className="text-[11px] font-black">{seat.seatType || `#${seat.seatNumber}`}</span>
+
                               {isSelected ? (
                                 <Check className="w-3 h-3 text-white absolute top-1 right-1" />
-                              ) : !isAvailable ? (
-                                <Lock className="w-3 h-3 text-slate-600 absolute top-1 right-1" />
+                              ) : isLocked ? (
+                                <span className="absolute top-1 right-1 flex items-center gap-0.5 text-[8px] font-extrabold text-amber-400 bg-amber-500/20 px-1 rounded">
+                                  <Lock className="w-2.5 h-2.5" />
+                                </span>
+                              ) : isBooked ? (
+                                <span className="absolute top-1 right-1 flex items-center gap-0.5 text-[8px] font-extrabold text-rose-400 bg-rose-500/20 px-1 rounded">
+                                  <Lock className="w-2.5 h-2.5" />
+                                </span>
                               ) : null}
                             </button>
                           );
@@ -441,7 +506,7 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
                         <div className="sm:col-span-3">
                           <p className="text-xs font-bold text-blue-400">Passenger #{idx + 1}</p>
                           <p className="text-xs text-slate-300 font-mono">
-                            Coach {seatObj?.coachNumber || activeCoach} - Seat #{seatObj?.seatNumber} ({seatObj?.seatType || 'Seat'})
+                            Coach {seatObj?.coachNumber} - Seat #{seatObj?.seatNumber} ({seatObj?.seatType || 'Seat'})
                           </p>
                         </div>
 
@@ -502,8 +567,10 @@ export const SeatSelector: React.FC<SeatSelectorProps> = ({
 
               <div className="space-y-3 border-b border-slate-800 pb-4 text-xs">
                 <div className="flex items-center justify-between text-slate-400">
-                  <span>Selected Class</span>
-                  <span className="font-bold text-white">{formatCoachType(selectedClass) || 'N/A'}</span>
+                  <span>Selected Filter</span>
+                  <span className="font-bold text-white">
+                    {selectedFilter === 'ALL' ? 'All Coaches' : formatCoachType(selectedFilter)}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between text-slate-400">
                   <span>Base Fare per seat</span>

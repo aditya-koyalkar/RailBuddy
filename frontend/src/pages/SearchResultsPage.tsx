@@ -18,8 +18,25 @@ export const SearchResultsPage: React.FC = () => {
       openAuthModal('signin');
       return;
     }
-    // Pass train data via route state
-    navigate('/select-seats', { state: { trainData } });
+
+    const scheduleId = trainData.scheduleId || 'default';
+    const fromSeq = trainData.from?.sequence || trainData.fromSeq || 1;
+    const toSeq = trainData.to?.sequence || trainData.toSeq || 2;
+    const selectedClass = trainData.selectedClass || '';
+    const fareAmount = trainData.fareAmount || 0;
+
+    const queryParams = new URLSearchParams({
+      fromSeq: String(fromSeq),
+      toSeq: String(toSeq),
+      ...(selectedClass ? { class: selectedClass } : {}),
+      ...(fareAmount ? { fare: String(fareAmount) } : {}),
+      fromCode: trainData.from?.code || fromCode,
+      toCode: trainData.to?.code || toCode,
+      trainName: trainData.trainName || trainData.name || '',
+      trainNumber: trainData.trainNumber || '',
+    }).toString();
+
+    navigate(`/select-seats/${scheduleId}?${queryParams}`, { state: { trainData } });
   };
 
   return (

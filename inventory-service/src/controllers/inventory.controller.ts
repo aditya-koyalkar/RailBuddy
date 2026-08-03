@@ -119,7 +119,7 @@ export const releaseSeats = unlockSeats;
 
 export const getSeatsByIds = asyncHandler(async (req: Request, res: Response) => {
     const scheduleId = req.params.scheduleId as string;
-    const { seatIds, fromSeq, toSeq } = req.query;
+    const { seatIds, fromSeq, toSeq, coachType, coachNumber } = req.query;
 
     if (!scheduleId || fromSeq === undefined || toSeq === undefined) {
         throw new BadRequestError("scheduleId, fromSeq, and toSeq are required");
@@ -129,7 +129,14 @@ export const getSeatsByIds = asyncHandler(async (req: Request, res: Response) =>
         ? (Array.isArray(seatIds) ? (seatIds as string[]) : (seatIds as string).split(',').filter(Boolean))
         : [];
 
-    const seats = await inventoryService.getSeatsByIds(scheduleId, ids, Number(fromSeq), Number(toSeq));
+    const seats = await inventoryService.getSeatsByIds(
+        scheduleId,
+        ids,
+        Number(fromSeq),
+        Number(toSeq),
+        coachType as string,
+        coachNumber as string
+    );
 
     return res.status(200).json({
         success: true,
