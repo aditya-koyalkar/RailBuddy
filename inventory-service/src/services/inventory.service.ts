@@ -298,23 +298,36 @@ export const lockSeats = async (
 
             const now = new Date();
 
+            // Purge expired locks or existing lock records for the same bookingId
+            await tx.seatSegmentReservation.deleteMany({
+                where: {
+                    scheduleId,
+                    seatId: { in: seatIds },
+                    OR: [
+                        { bookingId },
+                        { status: "LOCKED", expiresAt: { lte: now } }
+                    ]
+                }
+            });
+
             const conflict = await tx.seatSegmentReservation.findFirst({
                 where: {
                     scheduleId,
                     seatId: { in: seatIds },
                     fromSequence: { lt: toSeqNum },
                     toSequence: { gt: fromSeqNum },
+                    bookingId: { not: bookingId },
                     OR: [
                         { status: "BOOKED" },
                         { status: "LOCKED", expiresAt: null },
                         { status: "LOCKED", expiresAt: { gt: now } }
                     ]
                 },
-                select: { seatId: true }
+                select: { seatId: true, status: true }
             });
 
             if (conflict) {
-                throw new ConflictError(`Seat ${conflict.seatId} is already locked/booked for overlapping segment`);
+                throw new ConflictError(`Seat ${conflict.seatId} is not available (status: ${conflict.status})`);
             }
 
             const lockData = scheduleSeats.map((si: any) => ({
