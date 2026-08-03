@@ -207,57 +207,81 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
                 )}
 
                 {/* Coach Class Cards Grid */}
-                {hasSchedule && (
-                  <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {['GENERAL', 'FIRST_CLASS', '3A', '2A', '1A', 'SL'].map((cls) => {
-                      if (selectedClassFilter !== 'ALL' && selectedClassFilter !== cls) return null;
+                {hasSchedule && (() => {
+                  // Dynamically extract classes ONLY from actual train configuration (fares & coaches)
+                  const configuredFares = t.fares || [];
+                  const fareClassTypes = configuredFares.map((f: any) => f.coachType?.toUpperCase());
+                  const coachClassTypes = (t.coaches || []).map((c: any) => c.coachType?.toUpperCase());
+                  
+                  const classList: string[] = Array.from(
+                    new Set([...fareClassTypes, ...coachClassTypes].filter(Boolean))
+                  );
 
-                      // Match fare or fallback
-                      const fareObj = (t.fares || []).find((f: any) => f.coachType?.toUpperCase() === cls);
-                      const fareAmount = fareObj ? fareObj.fare : (cls === 'FIRST_CLASS' ? 1800 : cls === 'GENERAL' ? 500 : 1100);
+                  if (classList.length === 0) {
+                    return (
+                      <div className="mt-4 p-3 rounded-xl bg-slate-800/40 border border-slate-700/60 text-slate-400 text-xs">
+                        No coach classes or fares configured for this train yet.
+                      </div>
+                    );
+                  }
 
-                      return (
-                        <div
-                          key={cls}
-                          onClick={() => onSelectTrainSchedule({ ...t, selectedClass: cls, fareAmount })}
-                          className="p-3.5 rounded-xl bg-slate-800/60 border border-slate-700/80 hover:border-blue-500 cursor-pointer transition-all hover:scale-[1.02] flex flex-col justify-between group"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-sm text-white group-hover:text-blue-400 transition-colors">{cls}</span>
-                            <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                              Available
-                            </span>
-                          </div>
+                  const primaryClass = classList[0];
+                  const primaryFareObj = configuredFares.find((f: any) => f.coachType?.toUpperCase() === primaryClass);
+                  const primaryFare = primaryFareObj ? Number(primaryFareObj.fare) : 0;
 
-                          <div className="mt-3 flex items-end justify-between">
-                            <div>
-                              <p className="text-[10px] text-slate-400">Fare per seat</p>
-                              <p className="text-base font-extrabold text-white">₹{fareAmount}</p>
+                  return (
+                    <>
+                      <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        {classList.map((cls) => {
+                          if (selectedClassFilter !== 'ALL' && selectedClassFilter !== cls) return null;
+
+                          const fareObj = configuredFares.find((f: any) => f.coachType?.toUpperCase() === cls);
+                          const fareAmount = fareObj ? Number(fareObj.fare) : 0;
+
+                          return (
+                            <div
+                              key={cls}
+                              onClick={() => onSelectTrainSchedule({ ...t, selectedClass: cls, fareAmount })}
+                              className="p-3.5 rounded-xl bg-slate-800/60 border border-slate-700/80 hover:border-blue-500 cursor-pointer transition-all hover:scale-[1.02] flex flex-col justify-between group"
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-sm text-white group-hover:text-blue-400 transition-colors">{cls}</span>
+                                <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                                  Available
+                                </span>
+                              </div>
+
+                              <div className="mt-3 flex items-end justify-between">
+                                <div>
+                                  <p className="text-[10px] text-slate-400">Fare per seat</p>
+                                  <p className="text-base font-extrabold text-white">
+                                    {fareAmount > 0 ? `₹${fareAmount}` : 'N/A'}
+                                  </p>
+                                </div>
+                                <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-blue-400 group-hover:translate-x-1 transition-all" />
+                              </div>
                             </div>
-                            <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-blue-400 group-hover:translate-x-1 transition-all" />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                          );
+                        })}
+                      </div>
 
-                {/* Bottom Action Footer */}
-                {hasSchedule && (
-                  <div className="mt-4 pt-3 border-t border-slate-800/60 flex items-center justify-between text-xs text-slate-400">
-                    <span className="flex items-center gap-1">
-                      <Shield className="w-3.5 h-3.5 text-blue-400" />
-                      Distributed Saga Protected
-                    </span>
-                    <button
-                      onClick={() => onSelectTrainSchedule({ ...t, selectedClass: '3A', fareAmount: 1100 })}
-                      className="text-blue-400 font-semibold hover:text-blue-300 flex items-center gap-1"
-                    >
-                      <span>Select Seats & Book</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                )}
+                      {/* Bottom Action Footer */}
+                      <div className="mt-4 pt-3 border-t border-slate-800/60 flex items-center justify-between text-xs text-slate-400">
+                        <span className="flex items-center gap-1">
+                          <Shield className="w-3.5 h-3.5 text-blue-400" />
+                          Distributed Saga Protected
+                        </span>
+                        <button
+                          onClick={() => onSelectTrainSchedule({ ...t, selectedClass: primaryClass, fareAmount: primaryFare })}
+                          className="text-blue-400 font-semibold hover:text-blue-300 flex items-center gap-1"
+                        >
+                          <span>Select Seats & Book</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </>
+                  );
+                })()}
 
               </div>
             );

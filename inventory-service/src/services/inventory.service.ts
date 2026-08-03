@@ -618,32 +618,37 @@ export const getSeatsByIds = async (scheduleId: string, seatIds: string[], fromS
     const fromSeqNum = Number(fromSeq);
     const toSeqNum = Number(toSeq);
 
-    if (!scheduleId || !seatIds || seatIds.length === 0) {
-        throw new BadRequestError("scheduleId and seatIds are required");
+    if (!scheduleId) {
+        throw new BadRequestError("scheduleId is required");
     }
     if (fromSeq === undefined || toSeq === undefined) {
         throw new BadRequestError("fromSeq and toSeq are required");
     }
 
+    const fetchAll = !seatIds || seatIds.length === 0;
+
     const seats = await prisma.scheduleSeat.findMany({
         where: {
             scheduleId,
-            seatId: { in: seatIds }
-        }
+            ...(fetchAll ? {} : { seatId: { in: seatIds } })
+        },
+        orderBy: [{ coachNumber: 'asc' }, { seatNumber: 'asc' }]
     });
 
-    if (seats.length !== seatIds.length) {
+    if (!fetchAll && seats.length !== seatIds.length) {
         const foundIds = new Set(seats.map((s) => s.seatId));
         const missing = seatIds.filter((id) => !foundIds.has(id));
         throw new NotFoundError(`Seats not found: ${missing.join(', ')}`);
     }
+
+    const fetchedSeatIds = seats.map((s) => s.seatId);
 
     // Check segment availability for each seat
     const now = new Date();
     const overlappingReservations = await prisma.seatSegmentReservation.findMany({
         where: {
             scheduleId,
-            seatId: { in: seatIds },
+            seatId: { in: fetchedSeatIds },
             fromSequence: { lt: toSeqNum },
             toSequence: { gt: fromSeqNum },
             OR: [
