@@ -405,7 +405,7 @@ const createFares = async (trainId: string, fares: Array<{ fromStationId: string
 
 const getAllTrains = async () => {
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    today.setUTCHours(0, 0, 0, 0);
 
     return await prisma.train.findMany({
         include: {

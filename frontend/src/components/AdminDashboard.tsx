@@ -1212,20 +1212,24 @@ export const AdminDashboard: React.FC = () => {
         const originStn = stops[0]?.station?.code || 'START';
         const destStn = stops[stops.length - 1]?.station?.code || 'END';
 
-        // Collect schedules ONLY for the selected train
+        // Collect FUTURE schedules ONLY for the selected train
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
         const displaySchedules: Array<{ trainName: string; trainNumber: string; schedule: any }> = [];
         if (schedTrainId && selectedTrain?.schedules && Array.isArray(selectedTrain.schedules)) {
-          selectedTrain.schedules.forEach((sch: any) => {
-            displaySchedules.push({
-              trainName: selectedTrain.name,
-              trainNumber: selectedTrain.trainNumber,
-              schedule: sch,
+          selectedTrain.schedules
+            .filter((sch: any) => new Date(sch.departureDate) >= today)
+            .forEach((sch: any) => {
+              displaySchedules.push({
+                trainName: selectedTrain.name,
+                trainNumber: selectedTrain.trainNumber,
+                schedule: sch,
+              });
             });
-          });
         }
 
-        // Sort by departure date descending
-        displaySchedules.sort((a, b) => new Date(b.schedule.departureDate).getTime() - new Date(a.schedule.departureDate).getTime());
+        // Sort by departure date ascending (nearest first)
+        displaySchedules.sort((a, b) => new Date(a.schedule.departureDate).getTime() - new Date(b.schedule.departureDate).getTime());
 
         return (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -1248,7 +1252,11 @@ export const AdminDashboard: React.FC = () => {
                     <option value="">-- Choose Train --</option>
                     {trains.map((t) => (
                       <option key={t.id} value={t.id}>
-                        {t.name} (#{t.trainNumber}) {t.schedules?.length ? `[${t.schedules.length} Active Schedules]` : '[No Schedules]'}
+                      {t.name} (#{t.trainNumber}) {(() => {
+                        const now = new Date(); now.setHours(0,0,0,0);
+                        const future = (t.schedules || []).filter((s: any) => new Date(s.departureDate) >= now);
+                        return future.length ? `[${future.length} Upcoming Schedules]` : '[No Upcoming Schedules]';
+                      })()}
                       </option>
                     ))}
                   </select>
